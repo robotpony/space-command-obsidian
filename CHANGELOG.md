@@ -2,6 +2,19 @@
 
 All notable changes to the ␣⌘ Warped Command plugin will be documented in this file.
 
+## [0.54.0] - 2026-10-14
+
+### Added — Wiki links resolve by page title in a Hugo vault
+
+- When the vault root is a Hugo site, a `[[Page Title]]` link that matches
+  no filename now resolves to the page whose frontmatter `title` matches,
+  ignoring case and punctuation: the same rule a Hugo wiki-link render
+  hook (e.g. Fugu's) uses, so a link that works on the site works in
+  Obsidian too. Covers clicking, hover preview, unresolved-link styling,
+  backlinks, and the graph. Files are never changed.
+- New setting: Settings → Posts → "Resolve wiki links by page title" (on
+  by default; does nothing outside a Hugo vault).
+
 ## [0.53.0] - 2026-09-29
 
 ### Added — Text filter for the Posts tab

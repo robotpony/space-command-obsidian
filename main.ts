@@ -11,7 +11,7 @@ import {
   TextComponent,
   Vault,
 } from "obsidian";
-import { join, sep } from "path";
+import { join, relative, sep } from "path";
 import { TodoScanner } from "./src/TodoScanner";
 import { TodoProcessor } from "./src/TodoProcessor";
 import { ProjectManager } from "./src/ProjectManager";
@@ -41,6 +41,8 @@ import { TabLockManager } from "./src/TabLockManager";
 import { createHeaderSortPlugin } from "./src/HeaderSortExtension";
 import { createHeaderChecklistExtension } from "./src/HeaderChecklistExtension";
 import { SidebarManager } from "./src/shared";
+import { readHugoSite } from "./src/HugoScanner";
+import { HugoTitleLinkResolver } from "./src/HugoTitleLinks";
 import { guessProjectsFolder, homeRelativePath, PROJECT_SORT_OPTIONS } from "./src/ProjectsSidebarView";
 
 export default class WarpedTodoPlugin extends Plugin {
@@ -53,6 +55,7 @@ export default class WarpedTodoPlugin extends Plugin {
   tabLockManager: TabLockManager;
   teamManager: TeamManager;
   helpNoteManager: HelpNoteManager;
+  titleLinkResolver: HugoTitleLinkResolver;
   private sidebarManager: SidebarManager;
 
   async onload() {
@@ -509,8 +512,36 @@ export default class WarpedTodoPlugin extends Plugin {
       this.sidebarManager.toggle();
     });
 
+    // Title-based wiki links for a Hugo vault — see HugoTitleLinks.ts.
+    this.titleLinkResolver = new HugoTitleLinkResolver(this.app);
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => this.titleLinkResolver.onFileChanged(file)));
+    this.registerEvent(this.app.vault.on("delete", (file) => this.titleLinkResolver.onFileDeleted(file.path)));
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (file instanceof TFile) this.titleLinkResolver.onFileRenamed(file, oldPath);
+      })
+    );
+    this.app.workspace.onLayoutReady(() => void this.updateTitleLinkResolver());
+
     // Add settings tab
     this.addSettingTab(new WarpedTodoSettingTab(this.app, this));
+  }
+
+  /**
+   * Turns title-based wiki links on or off per the setting and whether the
+   * vault root is a Hugo site. Same vault-only detection as the Posts tab
+   * (readHugoSite on the vault's own base path, never a Projects scan).
+   */
+  async updateTitleLinkResolver(): Promise<void> {
+    const adapter = this.app.vault.adapter;
+    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+    const site = this.settings.resolveTitleLinks && basePath ? await readHugoSite(basePath) : null;
+    const contentPrefix = site && basePath ? relative(basePath, site.contentDir).split(sep).join("/") : null;
+    if (contentPrefix === null || contentPrefix.startsWith("..")) {
+      this.titleLinkResolver.disable();
+    } else {
+      this.titleLinkResolver.enable(contentPrefix);
+    }
   }
 
   /** Builds ProjectSyncManager's SyncOptions/ProjectsSidebarOptions from current settings. */
@@ -563,6 +594,8 @@ export default class WarpedTodoPlugin extends Plugin {
     // hardcoded former VIEW_TYPE_PROJECTS_SIDEBAR string clears it instead
     // of leaving an unrecognized-view leaf behind.
     this.app.workspace.detachLeavesOfType("warped-todo-projects-sidebar");
+    // Restore Obsidian's own link lookup
+    this.titleLinkResolver?.destroy();
     // Clean up tab lock manager
     this.tabLockManager.destroy();
     // Stop the Projects file watcher (fs.watch doesn't clean itself up)
@@ -1281,6 +1314,19 @@ class WarpedTodoSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.postsEditorApp = value.trim() || "Visual Studio Code";
             await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Resolve wiki links by page title")
+      .setDesc("When the vault is a Hugo site, a [[Page Title]] link that matches no filename resolves to the page whose frontmatter title matches, ignoring case and punctuation (the same rule a Hugo wiki-link render hook uses). Covers clicking, hover preview, link styling, backlinks, and the graph. Files are never changed.")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.resolveTitleLinks)
+          .onChange(async (value) => {
+            this.plugin.settings.resolveTitleLinks = value;
+            await this.plugin.saveSettings();
+            await this.plugin.updateTitleLinkResolver();
           })
       );
 

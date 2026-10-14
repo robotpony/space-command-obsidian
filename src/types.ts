@@ -207,6 +207,8 @@ export interface WarpedTodoSettings {
    * same app name in practice.
    */
   postsEditorApp: string;
+  /** Resolve `[[Page Title]]` links by frontmatter title when the vault is a Hugo site. See HugoTitleLinks.ts. */
+  resolveTitleLinks: boolean;
   /** "major.minor" of the plugin version the help note was last revealed at ("" = never). Drives HelpNoteManager: reopens (never overwrites) the help note when this falls behind the running version's major.minor. */
   helpNoteLastSeenVersion: string;
   /**
@@ -299,4 +301,5 @@ export const DEFAULT_SETTINGS: WarpedTodoSettings = {
   projectSyncState: {},
   // Posts (Hugo) — deliberately separate from the Projects extension above.
   postsEditorApp: "Visual Studio Code",
+  resolveTitleLinks: true,
 };

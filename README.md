@@ -258,6 +258,8 @@ Rows follow the same layout as the Projects list: a bold title (with a `draft` t
 
 **New post**, in the kebab menu while on the Posts tab, prompts for a title and a section, then creates `content/<section>/your-title.md` from the repo's own Hugo archetype (`archetypes/<section>.md`, falling back to `archetypes/default.md`, then a simple built-in template) and opens it.
 
+**Title links.** If your Hugo site writes wiki links by page title (`[[Cherry tomato and garlic spaghetti]]` for `cherry-tomato-and-garlic-spaghetti.md`), Obsidian can't resolve them by filename. In a Hugo vault the plugin falls back to matching the link against each content page's frontmatter `title`, lowercased with punctuation runs collapsed to a space, so clicking, hover preview, backlinks, and the graph all find the page. Files and frontmatter are never changed. Turn it off under Settings → Posts → "Resolve wiki links by page title."
+
 The Posts tab is read/navigate + create only — there's no draft/publish toggle here; flipping `draft` in the frontmatter and running `hugo` stays a terminal job. Requires the plugin's desktop build, same as Projects.
 
 ## Editor shortcuts

@@ -984,6 +984,40 @@ creation. `_index.md` files are excluded from the post list (Hugo section-
 index/list pages, not posts); an ordinary leaf-bundle `index.md` is still
 included.
 
+### Title-based wiki links (`src/HugoTitleLinks.ts`)
+
+Hugo sites with a wiki-link render hook (Fugu's `_markup/render-link.html`)
+write links by page title, while files are kebab-case slugs. Obsidian
+resolves by filename only; `aliases` feed its link suggester, not
+resolution, and Hugo owns that key for URL redirects anyway. So in a Hugo
+vault the plugin wraps `metadataCache.getLinkpathDest`: Obsidian's own
+lookup runs first, and only an empty result falls back to a
+normalized-title index (`TitleLinkIndex`), so filename matches always win.
+
+- **Normalization** (`HugoParser.normalizeLinkTitle`) copies the render
+  hook's rule: lowercase, collapse each `[^a-z0-9]+` run to one space,
+  trim. Keep the two in step.
+- **Index scope** matches the hook's `site.RegularPages`: markdown under
+  `contentDir`, minus `_index.md`. Drafts are included. Duplicate titles
+  pick the first path in sort order (Hugo uses its own page order).
+- **Why `getLinkpathDest`**: in Obsidian 1.14's app.js,
+  `getFirstLinkpathDest`, `isUnresolved` (the `is-unresolved` link class),
+  `openLinkText` (click), and `resolveLinks` (`resolvedLinks` /
+  `unresolvedLinks`, which back backlinks and the graph) all route through
+  it. These are internal call paths, not public API. Re-check them when
+  Obsidian changes link resolution.
+- **Re-resolution**: after the index changes (enable/disable, or a title
+  edit, debounced 500 ms), every note is re-queued through the internal
+  `queueFileForLinkResolution` so the link graph catches up. It's skipped
+  if that method disappears.
+- **Detection** is the Posts tab's vault-only `readHugoSite(vaultBasePath)`,
+  gated on the `resolveTitleLinks` setting (on by default). Unload restores
+  the original method unless another plugin has wrapped it since; in that
+  case the wrapper stays in the chain as a pass-through.
+- **Not covered**: the render hook's glossary fallback (`[[Term]]` → a
+  `##` heading in the glossary page). The link suggester still inserts
+  filenames.
+
 ### No YAML/TOML dependency
 
 Like `PlanParser.ts`/`StructuredFileParser.ts`, `HugoParser.ts` is pure and

@@ -4787,6 +4787,9 @@ function slugify(title) {
   const slug = title.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return slug || "untitled";
 }
+function normalizeLinkTitle(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
 var DEFAULT_ARCHETYPE = `---
 title: "{{ replace .Name "-" " " | title }}"
 date: {{ .Date }}
@@ -8035,7 +8038,8 @@ var DEFAULT_SETTINGS = {
   helpNoteLastSeenVersion: "",
   projectSyncState: {},
   // Posts (Hugo) — deliberately separate from the Projects extension above.
-  postsEditorApp: "Visual Studio Code"
+  postsEditorApp: "Visual Studio Code",
+  resolveTitleLinks: true
 };
 
 // src/SlackConverter.ts
@@ -8629,6 +8633,203 @@ function createHeaderChecklistExtension() {
   );
 }
 
+// src/HugoTitleLinks.ts
+var TitleLinkIndex = class {
+  constructor() {
+    /** vault path → normalized title, for every indexed page. */
+    this.titles = /* @__PURE__ */ new Map();
+    /** normalized title → vault paths carrying it, sorted. */
+    this.byTitle = /* @__PURE__ */ new Map();
+  }
+  /**
+   * Sets (or, with an empty/undefined title, removes) a page's title.
+   * Returns true when the index changed.
+   */
+  set(path, title) {
+    var _a;
+    const normalized = title ? normalizeLinkTitle(title) : "";
+    const previous = this.titles.get(path);
+    if ((previous != null ? previous : "") === normalized)
+      return false;
+    if (previous !== void 0)
+      this.removeFromBucket(previous, path);
+    if (normalized) {
+      this.titles.set(path, normalized);
+      const bucket = (_a = this.byTitle.get(normalized)) != null ? _a : [];
+      bucket.push(path);
+      bucket.sort();
+      this.byTitle.set(normalized, bucket);
+    } else {
+      this.titles.delete(path);
+    }
+    return true;
+  }
+  delete(path) {
+    return this.set(path, void 0);
+  }
+  clear() {
+    this.titles.clear();
+    this.byTitle.clear();
+  }
+  /**
+   * The page a link resolves to, or null. Duplicate titles resolve to the
+   * first path in sort order — deterministic, though Hugo itself picks by
+   * its own page order, so duplicates may differ from the site.
+   */
+  resolve(linkpath) {
+    var _a, _b;
+    const normalized = normalizeLinkTitle(linkpath);
+    if (!normalized)
+      return null;
+    return (_b = (_a = this.byTitle.get(normalized)) == null ? void 0 : _a[0]) != null ? _b : null;
+  }
+  removeFromBucket(normalized, path) {
+    const bucket = this.byTitle.get(normalized);
+    if (!bucket)
+      return;
+    const remaining = bucket.filter((p) => p !== path);
+    if (remaining.length)
+      this.byTitle.set(normalized, remaining);
+    else
+      this.byTitle.delete(normalized);
+  }
+};
+function isRegularPagePath(path, contentPrefix) {
+  if (!path.endsWith(".md"))
+    return false;
+  if (contentPrefix && !path.startsWith(contentPrefix))
+    return false;
+  return !(path === "_index.md" || path.endsWith("/_index.md"));
+}
+var HugoTitleLinkResolver = class {
+  constructor(app) {
+    this.app = app;
+    this.index = new TitleLinkIndex();
+    this.contentPrefix = null;
+    this.original = null;
+    this.wrapper = null;
+    this.reresolveTimer = null;
+  }
+  /** Whether the resolver is currently active (a Hugo site was found). */
+  get active() {
+    return this.contentPrefix !== null;
+  }
+  /**
+   * Starts resolving title links against the site whose content dir is at
+   * `contentPrefix` (vault-relative, "" for the vault root). Safe to call
+   * again; a second call just rebuilds the index.
+   */
+  enable(contentPrefix) {
+    this.contentPrefix = contentPrefix && !contentPrefix.endsWith("/") ? contentPrefix + "/" : contentPrefix;
+    this.rebuild();
+    this.install();
+    this.reresolveAll();
+  }
+  /** Stops resolving title links and restores Obsidian's own lookup. */
+  disable() {
+    if (this.contentPrefix === null)
+      return;
+    this.contentPrefix = null;
+    this.index.clear();
+    this.uninstall();
+    this.reresolveAll();
+  }
+  /** Disables and drops any pending re-resolve — for plugin unload. */
+  destroy() {
+    this.disable();
+    if (this.reresolveTimer)
+      clearTimeout(this.reresolveTimer);
+    this.reresolveTimer = null;
+  }
+  /** Re-reads one file's title after a metadata change. */
+  onFileChanged(file) {
+    if (!this.active)
+      return;
+    if (this.updateFile(file))
+      this.scheduleReresolve();
+  }
+  onFileDeleted(path) {
+    if (!this.active)
+      return;
+    if (this.index.delete(path))
+      this.scheduleReresolve();
+  }
+  onFileRenamed(file, oldPath) {
+    if (!this.active)
+      return;
+    const removed = this.index.delete(oldPath);
+    const added = this.updateFile(file);
+    if (removed || added)
+      this.scheduleReresolve();
+  }
+  updateFile(file) {
+    var _a, _b;
+    if (this.contentPrefix === null)
+      return false;
+    if (!isRegularPagePath(file.path, this.contentPrefix))
+      return this.index.delete(file.path);
+    const title = (_b = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.title;
+    return this.index.set(file.path, typeof title === "string" ? title : void 0);
+  }
+  rebuild() {
+    this.index.clear();
+    for (const file of this.app.vault.getMarkdownFiles())
+      this.updateFile(file);
+  }
+  install() {
+    if (this.wrapper)
+      return;
+    const cache = this.app.metadataCache;
+    const original = cache.getLinkpathDest;
+    this.original = original;
+    const wrapper = (linkpath, sourcePath) => {
+      const found = original.call(cache, linkpath, sourcePath);
+      if (found.length > 0 || this.contentPrefix === null)
+        return found;
+      const path = this.index.resolve(linkpath);
+      const file = path ? this.app.vault.getFileByPath(path) : null;
+      return file ? [file] : found;
+    };
+    this.wrapper = wrapper;
+    cache.getLinkpathDest = wrapper;
+  }
+  uninstall() {
+    const cache = this.app.metadataCache;
+    if (this.wrapper && cache.getLinkpathDest === this.wrapper && this.original) {
+      cache.getLinkpathDest = this.original;
+    }
+    this.wrapper = null;
+    this.original = null;
+  }
+  /** Debounced reresolveAll — a title being typed changes on every keystroke. */
+  scheduleReresolve() {
+    if (this.reresolveTimer)
+      clearTimeout(this.reresolveTimer);
+    this.reresolveTimer = setTimeout(() => {
+      this.reresolveTimer = null;
+      this.reresolveAll();
+    }, 500);
+  }
+  /**
+   * Queues every note for Obsidian's own link resolution so backlinks, graph
+   * and unresolved counts pick up the change. Cheap per file; Obsidian runs
+   * the queue in the background and fires `resolved` when done. Skipped
+   * silently if the internal method ever goes away.
+   */
+  reresolveAll() {
+    const cache = this.app.metadataCache;
+    if (typeof cache.queueFileForLinkResolution !== "function")
+      return;
+    try {
+      for (const file of this.app.vault.getMarkdownFiles()) {
+        cache.queueFileForLinkResolution(file);
+      }
+    } catch (error) {
+      console.error("[Warped Todo]", "Couldn't re-resolve links after a title change:", error);
+    }
+  }
+};
+
 // main.ts
 var WarpedTodoPlugin = class extends import_obsidian16.Plugin {
   constructor() {
@@ -8973,7 +9174,33 @@ var WarpedTodoPlugin = class extends import_obsidian16.Plugin {
     this.addRibbonIcon("square-check-big", "Toggle TODO Sidebar", () => {
       this.sidebarManager.toggle();
     });
+    this.titleLinkResolver = new HugoTitleLinkResolver(this.app);
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => this.titleLinkResolver.onFileChanged(file)));
+    this.registerEvent(this.app.vault.on("delete", (file) => this.titleLinkResolver.onFileDeleted(file.path)));
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (file instanceof import_obsidian16.TFile)
+          this.titleLinkResolver.onFileRenamed(file, oldPath);
+      })
+    );
+    this.app.workspace.onLayoutReady(() => void this.updateTitleLinkResolver());
     this.addSettingTab(new WarpedTodoSettingTab(this.app, this));
+  }
+  /**
+   * Turns title-based wiki links on or off per the setting and whether the
+   * vault root is a Hugo site. Same vault-only detection as the Posts tab
+   * (readHugoSite on the vault's own base path, never a Projects scan).
+   */
+  async updateTitleLinkResolver() {
+    const adapter = this.app.vault.adapter;
+    const basePath = adapter instanceof import_obsidian16.FileSystemAdapter ? adapter.getBasePath() : null;
+    const site = this.settings.resolveTitleLinks && basePath ? await readHugoSite(basePath) : null;
+    const contentPrefix = site && basePath ? (0, import_path8.relative)(basePath, site.contentDir).split(import_path8.sep).join("/") : null;
+    if (contentPrefix === null || contentPrefix.startsWith("..")) {
+      this.titleLinkResolver.disable();
+    } else {
+      this.titleLinkResolver.enable(contentPrefix);
+    }
   }
   /** Builds ProjectSyncManager's SyncOptions/ProjectsSidebarOptions from current settings. */
   projectsSyncOptions() {
@@ -9013,11 +9240,12 @@ var WarpedTodoPlugin = class extends import_obsidian16.Plugin {
     }).open();
   }
   onunload() {
-    var _a;
+    var _a, _b;
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_TODO_SIDEBAR);
     this.app.workspace.detachLeavesOfType("warped-todo-projects-sidebar");
+    (_a = this.titleLinkResolver) == null ? void 0 : _a.destroy();
     this.tabLockManager.destroy();
-    (_a = this.projectSyncManager) == null ? void 0 : _a.stopWatching();
+    (_b = this.projectSyncManager) == null ? void 0 : _b.stopWatching();
     if (this.projectSyncStateSaveTimer) {
       clearTimeout(this.projectSyncStateSaveTimer);
       this.projectSyncStateSaveTimer = null;
@@ -9183,8 +9411,8 @@ function chooseVaultPath(vault, kind, title, currentValue) {
       showNotice2("Choose a location inside your vault.");
       return null;
     }
-    const relative3 = chosen === basePath ? "" : chosen.slice(basePath.length + 1).split(import_path8.sep).join("/");
-    return kind === "folder" && relative3 ? `${relative3}/` : relative3;
+    const relative4 = chosen === basePath ? "" : chosen.slice(basePath.length + 1).split(import_path8.sep).join("/");
+    return kind === "folder" && relative4 ? `${relative4}/` : relative4;
   } catch (error) {
     console.error("[Warped Todo]", "Failed to open picker:", error);
     showNotice2("Couldn't open the picker. See console for details.");
@@ -9474,6 +9702,13 @@ var WarpedTodoSettingTab = class extends import_obsidian16.PluginSettingTab {
       (text) => text.setPlaceholder("Visual Studio Code").setValue(this.plugin.settings.postsEditorApp).onChange(async (value) => {
         this.plugin.settings.postsEditorApp = value.trim() || "Visual Studio Code";
         await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian16.Setting(containerEl).setName("Resolve wiki links by page title").setDesc("When the vault is a Hugo site, a [[Page Title]] link that matches no filename resolves to the page whose frontmatter title matches, ignoring case and punctuation (the same rule a Hugo wiki-link render hook uses). Covers clicking, hover preview, link styling, backlinks, and the graph. Files are never changed.").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.resolveTitleLinks).onChange(async (value) => {
+        this.plugin.settings.resolveTitleLinks = value;
+        await this.plugin.saveSettings();
+        await this.plugin.updateTitleLinkResolver();
       })
     );
     containerEl.createEl("h3", { text: "Focus Mode" });

@@ -135,6 +135,17 @@ export function slugify(title: string): string {
   return slug || "untitled";
 }
 
+/**
+ * Normalizes a wiki-link target or page title for title-based link matching
+ * (see HugoTitleLinks.ts). Mirrors the site-side rule in a Hugo wiki-link
+ * render hook (Fugu's `_markup/render-link.html`): lowercase, collapse any
+ * run of non-`[a-z0-9]` characters to one space, trim — so a link that
+ * resolves on the site resolves in Obsidian too. Keep the two in step.
+ */
+export function normalizeLinkTitle(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 export const DEFAULT_ARCHETYPE = `---
 title: "{{ replace .Name "-" " " | title }}"
 date: {{ .Date }}
