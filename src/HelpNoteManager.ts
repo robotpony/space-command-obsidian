@@ -54,15 +54,17 @@ shortcuts, see the [full README](https://github.com/robotpony/warped-command/blo
 ---
 
 This note is yours now. Delete it, edit it, or leave it as a running
-scratchpad. Warped Command never overwrites it. A future update might
-reopen it in a tab, but your edits stay exactly as you left them.
+scratchpad. Warped Command never overwrites it, and won't bring it back
+if you delete it. To get a fresh copy, use Settings → Help → "Show
+onboarding doc again".
 `;
 }
 
 /** Creates and reveals the first-use help note. Content is written once, on
- * creation, and never rewritten — see the note's own closing paragraph. A
- * later "reveal" (settings.helpNoteLastSeenVersion behind the running
- * version's majorMinor) just reopens whatever's there. */
+ * creation, and never rewritten — see the note's own closing paragraph.
+ * Auto-revealed only on first install (settings.helpNoteLastSeenVersion
+ * empty); after that only the Settings button calls open(), which recreates
+ * the note if the user deleted it. */
 export class HelpNoteManager {
   constructor(private app: App) {}
 

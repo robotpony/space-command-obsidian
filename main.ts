@@ -173,11 +173,11 @@ export default class WarpedTodoPlugin extends Plugin {
         this.sidebarManager.activate();
       }
 
-      // First-use help note: reveal on install, and again on any minor
-      // version bump (see HelpNoteManager — creates once, never overwrites).
-      const currentVersionKey = majorMinor(this.manifest.version);
-      if (this.settings.helpNoteLastSeenVersion !== currentVersionKey) {
-        this.settings.helpNoteLastSeenVersion = currentVersionKey;
+      // First-use help note: created and revealed on first install only.
+      // Later version bumps leave it alone, so a deleted note stays deleted;
+      // Settings → Help → "Show onboarding doc again" recreates it on demand.
+      if (!this.settings.helpNoteLastSeenVersion) {
+        this.settings.helpNoteLastSeenVersion = majorMinor(this.manifest.version);
         await this.saveSettings();
         void this.helpNoteManager.open();
       }

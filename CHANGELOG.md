@@ -2,6 +2,15 @@
 
 All notable changes to the ␣⌘ Warped Command plugin will be documented in this file.
 
+## [0.54.1] - 2026-10-14
+
+### Fixed — help note no longer comes back after you delete it
+
+- `Warped Command Help.md` is now created and opened only on first install.
+  Previously every minor version bump reopened it, recreating it if it had
+  been deleted. Settings → Help → "Show onboarding doc again" still
+  recreates it on demand.
+
 ## [0.54.0] - 2026-10-14
 
 ### Added — Wiki links resolve by page title in a Hugo vault

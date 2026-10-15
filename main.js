@@ -3898,8 +3898,9 @@ shortcuts, see the [full README](https://github.com/robotpony/warped-command/blo
 ---
 
 This note is yours now. Delete it, edit it, or leave it as a running
-scratchpad. Warped Command never overwrites it. A future update might
-reopen it in a tab, but your edits stay exactly as you left them.
+scratchpad. Warped Command never overwrites it, and won't bring it back
+if you delete it. To get a fresh copy, use Settings \u2192 Help \u2192 "Show
+onboarding doc again".
 `;
 }
 var HelpNoteManager = class {
@@ -8910,9 +8911,8 @@ var WarpedTodoPlugin = class extends import_obsidian16.Plugin {
       if (this.settings.showSidebarByDefault) {
         this.sidebarManager.activate();
       }
-      const currentVersionKey = majorMinor(this.manifest.version);
-      if (this.settings.helpNoteLastSeenVersion !== currentVersionKey) {
-        this.settings.helpNoteLastSeenVersion = currentVersionKey;
+      if (!this.settings.helpNoteLastSeenVersion) {
+        this.settings.helpNoteLastSeenVersion = majorMinor(this.manifest.version);
         await this.saveSettings();
         void this.helpNoteManager.open();
       }

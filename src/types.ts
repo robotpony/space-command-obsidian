@@ -209,7 +209,7 @@ export interface WarpedTodoSettings {
   postsEditorApp: string;
   /** Resolve `[[Page Title]]` links by frontmatter title when the vault is a Hugo site. See HugoTitleLinks.ts. */
   resolveTitleLinks: boolean;
-  /** "major.minor" of the plugin version the help note was last revealed at ("" = never). Drives HelpNoteManager: reopens (never overwrites) the help note when this falls behind the running version's major.minor. */
+  /** "major.minor" of the plugin version the help note was first revealed at ("" = never). Only its emptiness matters: the note is auto-created on first install and never again (a deleted note stays deleted). */
   helpNoteLastSeenVersion: string;
   /**
    * Per-project sync bookkeeping, keyed by project (repo folder) name. This
