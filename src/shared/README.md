@@ -12,7 +12,7 @@ Styled notice display with plugin branding.
 import { createNoticeFactory } from "../shared";
 
 // Create a factory for your plugin
-const showNotice = createNoticeFactory("␣⌘", "space-command-logo");
+const showNotice = createNoticeFactory("␣⌘", "warped-todo-logo");
 
 // Use it throughout your plugin
 showNotice("Task completed");

@@ -171,9 +171,9 @@ export class ProjectManager {
   }
 
   /**
-   * Vault-note-mtime fallback for `lastUpdated`, for a repo with neither a
-   * CHANGELOG.md nor a README.md on disk (ProjectScanner/ProjectMetadata
-   * already tried both — see getRepoLastUpdated). The note's own
+   * Vault-note-mtime fallback for `lastUpdated`, for a repo with no
+   * CHANGELOG.md, README.md, or PLAN.md on disk (ProjectScanner/
+   * ProjectMetadata already tried all three — see getRepoLastUpdated). The note's own
    * last-modified time is the next-best "recently updated" signal, and
    * unlike the repo's own files it's always resolvable here: ProjectManager
    * owns the vault side, ProjectMetadata only knows about files in the repo

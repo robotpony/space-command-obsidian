@@ -81,9 +81,9 @@ export interface ProjectInfo {
   planSummary?: PlanSummary;
   /**
    * Epoch ms for the Projects list's Recently updated sort/date. Repo-
-   * matched projects only: CHANGELOG.md's mtime, falling back to README.md's
-   * (ProjectMetadata.getRepoLastUpdated), falling back further to the vault
-   * project note's own mtime if the repo has neither
+   * matched projects only: CHANGELOG.md's mtime, falling back to README.md's,
+   * then PLAN.md's (ProjectMetadata.getRepoLastUpdated), falling back further
+   * to the vault project note's own mtime if the repo has none of the three
    * (ProjectManager.getProjects()'s fallback pass). Absent only if none of
    * those exist.
    */

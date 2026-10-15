@@ -1,5 +1,6 @@
 /**
- * Shared utilities for Obsidian plugins in this monorepo.
+ * Small plugin utilities, carried over from the pre-split monorepo. Local
+ * copy; no longer synced with any other plugin.
  *
  * @example
  * ```ts

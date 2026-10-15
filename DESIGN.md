@@ -12,23 +12,22 @@ The plugin has been renamed twice: `Space Command` → `Warped Todo` → `Warped
 │                    Entry point & component wiring               │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
-        ┌─────────────────────────┼─────────────────────────┐
-        │                         │                         │
-        ▼                         ▼                         ▼
-┌───────────────┐       ┌─────────────────┐       ┌─────────────────┐
-│  TodoScanner  │       │  TodoProcessor  │       │ ProjectManager  │
-│  (Data Layer) │◀─────▶│ (Mutation Layer)│       │ (Aggregation)   │
-└───────┬───────┘       └────────┬────────┘       └─────────────────┘
-        │                        │
-        │ todos-updated          │ triggers rescan
-        │ event                  │
-        ▼                        ▼
+     ┌──────────────────┬─────────┴────────┬────────────────────┐
+     ▼                  ▼                  ▼                    ▼
+┌─────────────┐  ┌───────────────┐  ┌────────────────┐  ┌──────────────┐
+│ TodoScanner │  │ TodoProcessor │  │ ProjectManager │  │ HugoScanner  │
+│ (vault data)│◀▶│ (vault writes)│  │ (aggregation)  │  │ (Posts, vault│
+└──────┬──────┘  └───────────────┘  └───────▲────────┘  │  root only)  │
+       │ todos-updated                      │           └──────┬───────┘
+       │                   ┌────────────────┴──────────┐       │
+       │                   │ ProjectScanner →          │       │
+       │                   │ ProjectSyncManager        │       │
+       │                   │ (git repos, item cache) ◀─┼─ ProjectItemMutator
+       │                   └────────────┬──────────────┘   (repo writes)
+       ▼                                ▼                      ▼
 ┌───────────────────────────────────────────────────────────────────┐
-│                        Rendering Layer                            │
-│  ┌──────────────────────────────────────────────────────────────┐ │
-│  │                      SidebarView                             │ │
-│  │   TODOs / Ideas tabs · tag cloud · focus mode                │ │
-│  └──────────────────────────────────────────────────────────────┘ │
+│                      SidebarView (one ItemView)                   │
+│   TODOs · Projects · Ideas · Posts tabs · tag cloud · focus mode  │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
@@ -110,8 +109,8 @@ this changed from the original delimited-block design.
 TODOs sidebar; a screenshot review found it behaved structurally unlike
 every other tab — its own leaf, its own icon in the sidebar dock's tab
 strip, a back button where clicking the tab again would do — so it was
-folded into `TodoSidebarView` as a third tab (`activeTab: 'todos' | 'ideas'
-| 'projects'`), alongside the tab-switching machinery `switchTab`/
+folded into `TodoSidebarView` as a tab (`activeTab`; now one of four,
+with Posts), alongside the tab-switching machinery `switchTab`/
 `switchToProjectsTab` already documented under SidebarView above.
 `src/ProjectsSidebarView.ts` is what's left of the original file: pure,
 `ItemView`-independent helpers (display formatting, hand-typed-item
@@ -292,8 +291,8 @@ The note body is no longer touched for items at all:
 1. **Synced items** — `ProjectSyncManager.getCachedItems()`, the actual
    `ParsedProjectItem[]` from the last sync, held in memory only. Grouped
    under `### TODOs`/`### Ideas`/`### Bugs` directly from `itemType`.
-   Mutations route to `sourceFile` (the external repo file), per Phase 1,
-   then update the cache directly (`updateCachedItems()`) — no vault write,
+   Mutations route to `sourceFile` (the external repo file) via
+   `ProjectItemMutator`, then update the cache directly (`updateCachedItems()`) — no vault write,
    nothing to resync.
 2. **Hand-typed items** — anything in the note tagged `#todo`/`#idea`/
    `#bug`, found by scanning the vault note through `TodoScanner` as usual,
@@ -310,10 +309,9 @@ snooze, complete) for both sources, **except "move"**, which is dropped
 from this view entirely — for either source, not just synced items. A
 synced item moved elsewhere would just reappear in its original note on
 the next sync; keeping "move" only for hand-typed items was considered
-and rejected as an inconsistent half-measure. (Separately, the plugin's
-existing vault-wide move feature — `MoveTargetModal.ts`, `moveTodo()`,
-the move history setting — is being removed entirely; unrelated to
-Projects, tracked as its own task, not a Phase 5/6 deliverable.)
+and rejected as an inconsistent half-measure. The vault-wide move feature
+(`MoveTargetModal.ts`, `moveTodo()`) is unaffected and still available
+outside the Projects tab.
 
 **Tags added via the context menu survive resync** for free now, with no
 carry-forward logic needed: `#focus`/`#p0`/etc. added to a synced item are
@@ -324,8 +322,8 @@ could fall out of sync with the source.
 
 **Completing an item** depends on what its source line actually looks
 like:
-- Has a checkbox already → toggle it (Phase 1's `sourceFile` write path,
-  unchanged).
+- Has a checkbox already → toggle it (`ProjectItemMutator`'s single-line
+  `sourceFile` write).
 - No checkbox, no tag at all (the common case for a plain bullet in a
   real `TODO.md`) → a checkbox is added and checked in the same edit —
   `- Add caching mechanism` becomes `- [x] Add caching mechanism`.
@@ -336,7 +334,7 @@ like:
   that file. Built as `HeaderBlockMover.ts`.
 - A standalone `##` item heading (`peep/ISSUES.md`'s `## Issue: ...` shape)
   completes by appending `" ✅ RESOLVED"` to its own heading line — no move,
-  just Phase 1's single-line write path again.
+  the same single-line write path.
 
 ### Project blocks in the TODOs/Ideas tabs
 
@@ -429,9 +427,10 @@ parsing, below.
 
 Custom Obsidian sidebar panel:
 
-- Three tabs — TODOs, Ideas, Projects (`activeTab`) — plus a separate Focus
-  Mode overlay toggled by the eye icon that composes with TODOs/Ideas only;
-  see "Immersive Focus Mode" below.
+- Four tabs — TODOs, Projects, Ideas, Posts (`activeTab`) — plus a separate
+  Focus Mode overlay toggled by the eye icon that composes with TODOs/Ideas
+  only; see "Immersive Focus Mode" below. Projects and Posts are covered in
+  their own sections ("Projects tab", "Hugo Posts").
 - **TODOs tab** (`renderTodosContent`): tag cloud (`renderProjects`,
   `#focus`/`#p0` pinned first), the active TODO list grouped by header
   where applicable (`renderActiveTodos`), then a collapsible **Summary**
@@ -538,6 +537,11 @@ interface ProjectInfo {
   remote?: string;
   branch?: string;
   gitStatus?: string;
+  title?: string;               // README title, or folder name
+  stack?: string[];
+  readmeSummary?: string;
+  planSummary?: PlanSummary;    // present only when the repo has a PLAN.md
+  lastUpdated?: number;         // drives "Recently updated"; see getRepoLastUpdated
 }
 ```
 
@@ -1031,36 +1035,41 @@ returns an untyped `Map` built for the project-note sync use case.
 ## File Organization
 
 ```
-warped-command/          # repo root — flat since the repo split (Phase 1a)
-├── main.ts              # Plugin entry, initialization
+warped-command/
+├── main.ts              # Plugin entry, wiring, settings tab
 ├── src/
-│   ├── TodoScanner.ts        # Vault + repo file scanning & caching
-│   ├── TodoProcessor.ts      # File mutations (vault or external sourceFile)
+│   ├── TodoScanner.ts        # Vault scanning & caching (vault only)
+│   ├── TodoProcessor.ts      # Vault item mutations
 │   ├── ProjectManager.ts     # Project grouping (tag- and repo-derived)
 │   ├── ProjectScanner.ts     # Git repo discovery & git fact-gathering
 │   ├── ProjectMetadata.ts    # Repo title/stack, "recently updated" date, PLAN.md summary
-│   ├── PlanParser.ts         # PLAN.md → PlanSummary (phase/progress, detail view only)
+│   ├── PlanParser.ts         # PLAN.md → PlanSummary (detail view only)
 │   ├── StructuredFileParser.ts # BUGS.md/TODO.md/etc. → ParsedProjectItem[]
-│   ├── ProjectSyncManager.ts # Vault note sync, fs.watch, manual sync command
-│   ├── ProjectItemMutator.ts # Mutates a ParsedProjectItem's source line/block
-│   ├── HeaderBlockMover.ts   # Multi-line block-move (Phase 6 Case 1)
-│   ├── HugoParser.ts         # Pure: Hugo config/frontmatter parsing, archetype rendering
-│   ├── HugoScanner.ts        # Hugo site detection, post scanning, post creation (fs)
+│   ├── ProjectSyncManager.ts # Frontmatter sync, item cache, fs.watch
+│   ├── ProjectItemMutator.ts # Mutates a ParsedProjectItem's source line
+│   ├── HeaderBlockMover.ts   # Moves a ### block between ## status sections
+│   ├── ProjectQueue.ts       # "Send selection to project" → TODO.md
+│   ├── SendToProjectModal.ts # Title prompt for the above
+│   ├── HugoParser.ts         # Pure: Hugo config/frontmatter parsing, archetypes
+│   ├── HugoScanner.ts        # Hugo site detection, post scanning, post creation
+│   ├── HugoTitleLinks.ts     # Title-based wiki-link resolution in a Hugo vault
 │   ├── NewHugoPostModal.ts   # "New post" title + section prompt
-│   ├── SidebarView.ts        # TODOs sidebar UI
-│   ├── ProjectsSidebarView.ts # Projects sidebar UI
+│   ├── SidebarView.ts        # The sidebar: all four tabs + focus mode
+│   ├── ProjectsSidebarView.ts # ItemView-free helpers for the Projects tab
 │   ├── ContextMenuHandler.ts # Right-click menus
 │   ├── SlashCommandSuggest.ts # / commands
-│   ├── AtSuggest.ts          # @ mentions and dates (no separate DateSuggest.ts)
+│   ├── AtSuggest.ts          # @ mentions and dates
 │   ├── TeamManager.ts        # Team file parsing
-│   ├── MoveTargetModal.ts    # File picker
+│   ├── HelpNoteManager.ts    # First-install help note
+│   ├── MoveTargetModal.ts    # File picker for "Move to"
 │   ├── TabLockManager.ts     # Tab lock buttons
 │   ├── HeaderSortExtension.ts      # CodeMirror extension
 │   ├── HeaderChecklistExtension.ts # CodeMirror extension
 │   ├── SlackConverter.ts     # Markdown → Slack mrkdwn
 │   ├── NotionConverter.ts    # Markdown → Notion-friendly
 │   ├── utils.ts              # Shared helpers
-│   └── types.ts              # Interfaces & types
+│   ├── types.ts              # Interfaces & types
+│   └── shared/               # Notice factory, SidebarManager (local copy)
 ├── styles.css           # Plugin styles
 └── manifest.json        # Obsidian plugin manifest
 ```
@@ -1095,11 +1104,11 @@ the active list automatically once every live child is done (see
 
 ### No New Runtime Dependencies
 
-Git facts use `child_process.execFile` (matching `warped-gdrive`'s `DriveProvider.ts` and its existing `rclone` pattern) instead of shelling out to an external tool like `p` — `git` itself is the only assumption. File watching uses native `fs.watch` rather than adding `chokidar`. Frontmatter is hand-parsed/generated the same way `warped-hugo`'s `src/utils.ts` already does it, no YAML library added. Both are sibling repos post-split, not paths in this one. Consistent with how the rest of this repo avoids dependencies where a small amount of native code covers the need.
+Git facts use `child_process.execFile` instead of shelling out to an external tool — `git` itself is the only assumption. File watching uses native `fs.watch` rather than adding `chokidar`. Frontmatter is hand-parsed and generated, no YAML library added. Consistent with how the rest of this repo avoids dependencies where a small amount of native code covers the need.
 
-### Delimited Sync Regions
+### Sync Writes Frontmatter Only
 
-`ProjectSyncManager` regenerates only a marked block in each project note, plus a defined set of frontmatter keys, rather than the whole file. A full-file regenerate is simpler but would silently discard anything written outside the synced items — including the `## Overview` section `ProjectManager`'s template already creates. Considered and rejected for that reason.
+`ProjectSyncManager` merges a fixed set of frontmatter keys into each project note and never touches the body. Two earlier designs were dropped: regenerating the whole file (would discard hand-written content like `## Overview`), and rewriting a delimited item block in the body (caused a flicker loop against `TodoScanner`'s checkbox↔tag correction and, with a separate runaway-sync bug, stacked duplicate blocks into the note). Synced items now live in an in-memory cache; see "Item list" under the Projects tab.
 
 ## Extension Points
 

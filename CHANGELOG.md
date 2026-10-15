@@ -2,6 +2,27 @@
 
 All notable changes to the ␣⌘ Warped Command plugin will be documented in this file.
 
+## [0.54.2] - 2026-10-15
+
+### Changed — documentation cleanup
+
+- README: removed a duplicated Projects section (the first copy still
+  claimed branch/status were written into frontmatter), finished a
+  truncated sentence in Quick start, corrected the tab count and order,
+  and documented `#today` in the priority table.
+- DESIGN.md: architecture diagram and file tree now cover Projects, Posts,
+  and every current source file; the stale "Delimited Sync Regions"
+  decision is replaced with what sync actually does; dropped references
+  to removed phase plans and sibling repos; `ProjectInfo` model updated.
+- CLAUDE.md: corrected the `ProjectSyncManager` description and added
+  `HelpNoteManager.ts`.
+- plugin-conventions.md rewritten to describe this plugin as it is, not a
+  multi-plugin template: dropped the `Result` type, `LLMClient`, and
+  custom-dropdown sections (none of which this code uses) and the generic
+  `{plugin-id}` boilerplate.
+- Minimum Obsidian version raised to 1.14 (`minAppVersion`), matching the
+  internal link-resolution paths title-based wiki links rely on.
+
 ## [0.54.1] - 2026-10-14
 
 ### Fixed — help note no longer comes back after you delete it
