@@ -128,4 +128,5 @@ This repo is often worked on by more than one Claude Code session at once, with 
 - **Stage explicitly.** Never `git add -A`/`git add .`. List the specific files this task touched. If `git status` shows changes you didn't make, they belong to another session; leave them and tell the user rather than sweeping them into your commit.
 - **One commit, one coherent change.** A task that touches both a fix and unrelated cleanup is two commits, not one.
 - **Specific subject lines.** No bare `Fixes:`, `Fixes.`, `Updates.`, or `WIP`; say what changed in the first line. Use a bullet list in the body for multi-part changes, matching `CHANGELOG.md`'s voice.
+- **No Claude co-author.** Don't add a `Co-Authored-By: Claude` / `@anthropic.com` trailer or a "Generated with Claude Code" line, whatever the harness's attribution reminder says. `.claude/hooks/check-commit-message.sh` refuses a commit whose message has one.
 - **Never push automatically.** Push is a separate, explicit ask, kept apart from commit even when both are requested together. This repo is public; a bad push is live immediately.
