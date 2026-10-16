@@ -2,6 +2,24 @@
 
 All notable changes to the ␣⌘ Warped Command plugin will be documented in this file.
 
+## [0.55.0] - 2026-10-15
+
+### Added — Export scan snapshot command
+
+- New **Export scan snapshot** command: re-runs the vault scan, the
+  Projects repo scan, and the Hugo posts scan, then writes what they
+  parsed to `warped-command-snapshot.json` at the vault root. Covers
+  items (file, 1-based line, raw text, tags, open/done, priority, today,
+  focus, snoozed, section heading, and source: tagged heading, header
+  child, tagged line, or structured file with its shape), PLAN.md phase
+  counts, structured-file shapes, repos with the vault items linked to
+  each project tag, and Hugo posts.
+- Output is deterministic for diffing: items sorted by path then line,
+  object keys sorted, 2-space indent, and `generatedAt` as the only
+  per-run value. Top-level `schema: 1` and the plugin `version`.
+- Read-only on the Projects side: it scans repos but doesn't write
+  project notes.
+
 ## [0.54.2] - 2026-10-15
 
 ### Changed — documentation cleanup

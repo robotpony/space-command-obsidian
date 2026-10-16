@@ -8,7 +8,7 @@ import { projectFilePath } from "./ProjectManager";
 import { ProjectSyncStateEntry } from "./types";
 
 const TAG = "[Warped Todo]";
-const STRUCTURED_FILENAMES = ["BUGS.md", "TODO.md", "TODOS.md", "IDEAS.md", "ISSUES.md"];
+export const STRUCTURED_FILENAMES = ["BUGS.md", "TODO.md", "TODOS.md", "IDEAS.md", "ISSUES.md"];
 const WATCH_DEBOUNCE_MS = 300;
 // Ignore watch events for this long right after a sync completes — a plain
 // `git status` (run per repo during every scan) can rewrite `.git/index`'s
@@ -416,7 +416,7 @@ export class ProjectSyncManager {
  * path per name (a top-level checkout is more likely the canonical one than
  * something nested under archive/ or a deploy folder) and logs the rest.
  */
-function dedupeByName(projects: ScannedProject[]): ScannedProject[] {
+export function dedupeByName(projects: ScannedProject[]): ScannedProject[] {
   const byName = new Map<string, ScannedProject[]>();
   for (const project of projects) {
     const group = byName.get(project.name) ?? [];

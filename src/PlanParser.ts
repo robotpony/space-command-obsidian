@@ -36,6 +36,8 @@ export interface PlanSummary {
   doneCount: number;
   /** All boxes across the whole file. */
   totalCount: number;
+  /** Every phase (sections carrying a checkbox), in file order — used by the scan snapshot export. */
+  phases: { heading: string; done: number; total: number }[];
 }
 
 const CHECKBOX_RE = /^\s*[-*+]\s+\[([ xX])\]\s+/;
@@ -109,5 +111,6 @@ export function parsePlan(content: string): PlanSummary | null {
     currentPhaseOpenCount: phase ? phase.openLines.length : 0,
     doneCount,
     totalCount,
+    phases: phases.map((s) => ({ heading: s.heading, done: s.done, total: s.total })),
   };
 }

@@ -29,6 +29,8 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian16 = require("obsidian");
 var import_path8 = require("path");
+var import_fs6 = require("fs");
+var import_promises7 = require("fs/promises");
 
 // src/TodoScanner.ts
 var import_obsidian3 = require("obsidian");
@@ -1821,431 +1823,6 @@ ${text}` : text;
   }
 };
 
-// src/ProjectManager.ts
-var import_obsidian5 = require("obsidian");
-function projectFilePath(projectsFolder, tag) {
-  const filename = tag.replace(/^#/, "") + ".md";
-  return projectsFolder + filename;
-}
-var ProjectManager = class {
-  constructor(app, scanner, projectsFolder, priorityTags, excludeFolders = []) {
-    this.app = app;
-    this.scanner = scanner;
-    this.projectsFolder = projectsFolder;
-    this.priorityTags = priorityTags;
-    this.excludeFolders = excludeFolders;
-  }
-  /**
-   * Resolves which project tag(s) a single TODO belongs to, in the same
-   * precedence `getProjects()` aggregates by: explicit project tags always
-   * win; only with none present does a file under the configured projects
-   * folder (and not excluded via `excludeFoldersFromProjects`) fall back to
-   * its inferred file tag. Extracted from `getProjects()`'s aggregation loop
-   * so render-path code (e.g. SidebarView styling a vault TODO block to
-   * match a project's identity) can resolve one item without duplicating —
-   * and risking drift from — this same precedence.
-   */
-  resolveProjectTags(todo) {
-    const excludedTags = /* @__PURE__ */ new Set([
-      "#todo",
-      "#todos",
-      "#todone",
-      "#todones",
-      "#idea",
-      "#ideas",
-      "#ideation",
-      "#principle",
-      "#principles",
-      "#future",
-      "#snooze",
-      "#snoozed",
-      "#focus",
-      "#today",
-      ...this.priorityTags
-    ]);
-    const explicitProjectTags = todo.tags.filter((tag) => !excludedTags.has(tag));
-    if (explicitProjectTags.length > 0)
-      return explicitProjectTags;
-    if (todo.inferredFileTag && this.isInProjectsFolder(todo.folder)) {
-      return [todo.inferredFileTag];
-    }
-    return [];
-  }
-  /**
-   * True when `folder` (a TodoItem's own folder, no filename) sits under the
-   * configured projects folder and isn't inside an `excludeFoldersFromProjects`
-   * subfolder. Exposed separately from `resolveProjectTags()` for a caller
-   * that wants "is this file itself a project note" independent of whatever
-   * explicit tags a specific TODO in it happens to carry — see SidebarView's
-   * resolveProjectBlockMatch, which styles a block by file location alone
-   * rather than resolveProjectTags()'s explicit-tag-first precedence (a
-   * generic context tag like #work isn't a project, but explicit-tag
-   * precedence would otherwise make it look like one).
-   */
-  isInProjectsFolder(folder) {
-    const isUnderProjectsFolder = folder.startsWith(this.projectsFolder.replace(/\/$/, ""));
-    const isExcluded = this.excludeFolders.some(
-      (excluded) => folder === excluded || folder.startsWith(excluded + "/")
-    );
-    return isUnderProjectsFolder && !isExcluded;
-  }
-  /**
-   * `scannedProjects` merges in repo-derived facts (branch, status, remote,
-   * local path) for any tag that matches a detected git repo's folder name —
-   * a repo with zero tracked items still gets an entry, and a tag-only project
-   * (no matching repo) is unaffected. Synchronous: callers are expected to pass
-   * the most recent `ProjectScanner`/`ProjectSyncManager.syncAll()` result
-   * rather than triggering a fresh scan here (scanning shells out to `git` per
-   * repo — not something render-path code should trigger on its own).
-   *
-   * `getCachedItems`, when supplied, folds each repo-matched project's
-   * synced items (from `ProjectSyncManager.getCachedItems()`) into
-   * `count`/`highestPriority`/`hasFocusItems` alongside the vault-derived
-   * numbers — see `foldSyncedItemsIntoProjects` below. Callers that only
-   * care about vault items can omit it; the merge step is skipped entirely.
-   */
-  getProjects(scannedProjects = [], getCachedItems) {
-    const todos = this.scanner.getTodos();
-    const projectMap = /* @__PURE__ */ new Map();
-    for (const todo of todos) {
-      const projectTags = this.resolveProjectTags(todo);
-      const todoPriority = getPriorityValue(todo.tags);
-      const todoHasFocus = hasTag(todo.tags, "#focus");
-      for (const tag of projectTags) {
-        if (projectMap.has(tag)) {
-          const project = projectMap.get(tag);
-          project.count++;
-          project.prioritySum += todoPriority;
-          project.lastActivity = Math.max(
-            project.lastActivity,
-            todo.dateCreated
-          );
-          project.highestPriority = Math.min(
-            project.highestPriority,
-            todoPriority
-          );
-          if (todoHasFocus) {
-            project.hasFocusItems = true;
-          }
-        } else {
-          projectMap.set(tag, {
-            tag,
-            count: 1,
-            lastActivity: todo.dateCreated,
-            highestPriority: todoPriority,
-            hasFocusItems: todoHasFocus,
-            prioritySum: todoPriority,
-            colourIndex: 4
-            // default, will be calculated below
-          });
-        }
-      }
-    }
-    const projects = [];
-    for (const [, project] of projectMap) {
-      const avgPriority = project.prioritySum / project.count;
-      const colourIndex = Math.min(6, Math.round((avgPriority - 1) * 6 / 7));
-      projects.push({
-        tag: project.tag,
-        count: project.count,
-        lastActivity: project.lastActivity,
-        highestPriority: project.highestPriority,
-        hasFocusItems: project.hasFocusItems,
-        colourIndex
-      });
-    }
-    const merged = mergeScannedProjects(projects, scannedProjects);
-    const withLastUpdated = this.applyNoteLastUpdatedFallback(merged);
-    return getCachedItems ? foldSyncedItemsIntoProjects(withLastUpdated, getCachedItems) : withLastUpdated;
-  }
-  /**
-   * Vault-note-mtime fallback for `lastUpdated`, for a repo with no
-   * CHANGELOG.md, README.md, or PLAN.md on disk (ProjectScanner/
-   * ProjectMetadata already tried all three — see getRepoLastUpdated). The note's own
-   * last-modified time is the next-best "recently updated" signal, and
-   * unlike the repo's own files it's always resolvable here: ProjectManager
-   * owns the vault side, ProjectMetadata only knows about files in the repo
-   * itself.
-   */
-  applyNoteLastUpdatedFallback(projects) {
-    return projects.map((project) => {
-      if (!project.localPath || project.lastUpdated !== void 0)
-        return project;
-      const file = this.app.vault.getAbstractFileByPath(this.getProjectFilePath(project.tag));
-      if (!(file instanceof import_obsidian5.TFile) || !file.stat)
-        return project;
-      return { ...project, lastUpdated: file.stat.mtime };
-    });
-  }
-  getFocusProjects(limit) {
-    const projects = this.getProjects();
-    projects.sort((a, b) => {
-      if (a.hasFocusItems && !b.hasFocusItems)
-        return -1;
-      if (!a.hasFocusItems && b.hasFocusItems)
-        return 1;
-      const priorityDiff = a.highestPriority - b.highestPriority;
-      if (priorityDiff !== 0)
-        return priorityDiff;
-      return b.count - a.count;
-    });
-    if (limit !== void 0 && limit > 0) {
-      return projects.slice(0, limit);
-    }
-    return projects;
-  }
-  getProjectFilePath(tag) {
-    return projectFilePath(this.projectsFolder, tag);
-  }
-  async getProjectFileInfo(tag) {
-    var _a, _b;
-    const filepath = this.getProjectFilePath(tag);
-    const file = this.app.vault.getAbstractFileByPath(filepath);
-    if (!(file instanceof import_obsidian5.TFile)) {
-      return null;
-    }
-    const content = await this.app.vault.read(file);
-    const lines = content.split("\n");
-    let startIndex = 0;
-    if (((_a = lines[0]) == null ? void 0 : _a.trim()) === "---") {
-      for (let i = 1; i < lines.length; i++) {
-        if (((_b = lines[i]) == null ? void 0 : _b.trim()) === "---") {
-          startIndex = i + 1;
-          break;
-        }
-      }
-    }
-    const blocks = [];
-    let currentBlock = "";
-    let inCodeBlock = false;
-    let inCallout = false;
-    for (let i = startIndex; i < lines.length && blocks.length < 2; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-      if (trimmed.startsWith("```")) {
-        inCodeBlock = !inCodeBlock;
-        if (currentBlock) {
-          blocks.push(currentBlock.trim());
-          currentBlock = "";
-          inCallout = false;
-        }
-        continue;
-      }
-      if (inCodeBlock) {
-        continue;
-      }
-      if (trimmed.startsWith("#") && trimmed.match(/^#+\s/)) {
-        if (currentBlock) {
-          blocks.push(currentBlock.trim());
-          currentBlock = "";
-          inCallout = false;
-        }
-        continue;
-      }
-      if (trimmed === tag) {
-        continue;
-      }
-      if (trimmed.match(/^\{\{.*\}\}$/)) {
-        continue;
-      }
-      if (trimmed.match(/^>\s*\[!/)) {
-        if (currentBlock) {
-          blocks.push(currentBlock.trim());
-          currentBlock = "";
-        }
-        inCallout = true;
-        currentBlock = line;
-        continue;
-      }
-      if (inCallout && trimmed.startsWith(">")) {
-        currentBlock += "\n" + line;
-        continue;
-      }
-      if (inCallout && !trimmed.startsWith(">")) {
-        if (currentBlock) {
-          blocks.push(currentBlock.trim());
-          currentBlock = "";
-        }
-        inCallout = false;
-      }
-      if (trimmed === "") {
-        if (currentBlock) {
-          blocks.push(currentBlock.trim());
-          currentBlock = "";
-        }
-        continue;
-      }
-      const cleanedLine = trimmed.replace(/\{\{[^}]*\}\}/g, "").trim();
-      if (cleanedLine) {
-        currentBlock += (currentBlock ? " " : "") + cleanedLine;
-      }
-    }
-    if (currentBlock && blocks.length < 2) {
-      blocks.push(currentBlock.trim());
-    }
-    if (blocks.length > 0) {
-      const lastBlock = blocks[blocks.length - 1];
-      const blockLines = lastBlock.split("\n");
-      while (blockLines.length > 0) {
-        const lastLine = blockLines[blockLines.length - 1].trim();
-        if (lastLine.match(/^#+\s/)) {
-          blockLines.pop();
-        } else {
-          break;
-        }
-      }
-      if (blockLines.length === 0) {
-        blocks.pop();
-      } else {
-        blocks[blocks.length - 1] = blockLines.join("\n").trim();
-      }
-    }
-    const principleRegex = /#principles?\b/gi;
-    const principlesInFile = [];
-    for (const line of lines) {
-      if (line.match(principleRegex)) {
-        const tagMatches = line.match(/#[\w-]+/g);
-        if (tagMatches) {
-          for (const match of tagMatches) {
-            if (!match.match(/^#principles?$/i) && !principlesInFile.includes(match)) {
-              principlesInFile.push(match);
-            }
-          }
-        }
-      }
-    }
-    return {
-      description: blocks.join("\n\n"),
-      principles: principlesInFile,
-      filepath
-    };
-  }
-  async openProjectFile(tag) {
-    const filename = tag.replace(/^#/, "") + ".md";
-    const filepath = this.projectsFolder + filename;
-    const file = this.app.vault.getAbstractFileByPath(filepath);
-    if (file instanceof import_obsidian5.TFile) {
-      const leaf = this.app.workspace.getLeaf(false);
-      await leaf.openFile(file);
-    } else {
-      const confirmed = await this.confirmCreateProjectFile(tag, filepath);
-      if (confirmed) {
-        await this.createProjectFile(filepath, tag);
-      }
-    }
-  }
-  confirmCreateProjectFile(tag, filepath) {
-    return new Promise((resolve) => {
-      const modal = new import_obsidian5.Modal(this.app);
-      modal.titleEl.setText("Create Project File?");
-      modal.contentEl.createEl("p", {
-        text: `Create project file for ${tag} in ${this.projectsFolder}?`
-      });
-      const buttonContainer = modal.contentEl.createEl("div", {
-        cls: "modal-button-container"
-      });
-      buttonContainer.style.display = "flex";
-      buttonContainer.style.justifyContent = "flex-end";
-      buttonContainer.style.gap = "8px";
-      buttonContainer.style.marginTop = "16px";
-      const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
-      cancelBtn.addEventListener("click", () => {
-        modal.close();
-        resolve(false);
-      });
-      const createBtn = buttonContainer.createEl("button", {
-        text: "Create",
-        cls: "mod-cta"
-      });
-      createBtn.addEventListener("click", () => {
-        modal.close();
-        resolve(true);
-      });
-      modal.open();
-    });
-  }
-  async createProjectFile(filepath, tag) {
-    const folderPath = filepath.substring(0, filepath.lastIndexOf("/"));
-    if (folderPath && !this.app.vault.getAbstractFileByPath(folderPath)) {
-      await this.app.vault.createFolder(folderPath);
-    }
-    const projectName = tag.replace(/^#/, "");
-    const content = `# ${projectName}
-
-${tag}
-
-## Guiding Principles #principles
-
-## Overview
-
-## TODOs
-
-`;
-    const file = await this.app.vault.create(filepath, content);
-    const leaf = this.app.workspace.getLeaf(false);
-    await leaf.openFile(file);
-  }
-};
-function mergeScannedProjects(projects, scannedProjects) {
-  if (scannedProjects.length === 0)
-    return projects;
-  const scannedByName = new Map(scannedProjects.map((p) => [p.name, p]));
-  const merged = /* @__PURE__ */ new Map();
-  for (const project of projects) {
-    const name = project.tag.replace(/^#/, "");
-    const scanned = scannedByName.get(name);
-    merged.set(name, scanned ? { ...project, ...repoFields(scanned) } : project);
-  }
-  for (const [name, scanned] of scannedByName) {
-    if (merged.has(name))
-      continue;
-    merged.set(name, {
-      tag: `#${name}`,
-      count: 0,
-      lastActivity: 0,
-      highestPriority: 8,
-      // unmarked-item value, matches getPriorityValue's default
-      hasFocusItems: false,
-      colourIndex: 4,
-      ...repoFields(scanned)
-    });
-  }
-  return [...merged.values()];
-}
-function foldSyncedItemsIntoProjects(projects, getCachedItems) {
-  return projects.map((project) => {
-    if (!project.localPath)
-      return project;
-    const items = getCachedItems(project.localPath).filter((i) => !i.completed);
-    if (items.length === 0)
-      return project;
-    let count = project.count;
-    let highestPriority = project.highestPriority;
-    let hasFocusItems = project.hasFocusItems;
-    for (const item of items) {
-      count++;
-      highestPriority = Math.min(highestPriority, getPriorityValue(item.tags));
-      if (hasTag(item.tags, "#focus"))
-        hasFocusItems = true;
-    }
-    return { ...project, count, highestPriority, hasFocusItems };
-  });
-}
-function repoFields(scanned) {
-  var _a, _b, _c;
-  return {
-    localPath: scanned.localPath,
-    remote: scanned.remote,
-    branch: scanned.branch,
-    gitStatus: scanned.gitStatus,
-    title: scanned.title,
-    stack: scanned.stack,
-    readmeSummary: (_a = scanned.readmeSummary) != null ? _a : void 0,
-    planSummary: (_b = scanned.planSummary) != null ? _b : void 0,
-    lastUpdated: (_c = scanned.lastUpdated) != null ? _c : void 0
-  };
-}
-
 // src/ProjectScanner.ts
 var import_child_process = require("child_process");
 var import_fs2 = require("fs");
@@ -2311,7 +1888,8 @@ function parsePlan(content) {
     currentPhaseOpenLines: phase ? phase.openLines.slice(0, MAX_OPEN_LINES) : [],
     currentPhaseOpenCount: phase ? phase.openLines.length : 0,
     doneCount,
-    totalCount
+    totalCount,
+    phases: phases.map((s) => ({ heading: s.heading, done: s.done, total: s.total }))
   };
 }
 
@@ -2995,6 +2573,431 @@ function isStatusSectionHeading(headingText) {
 }
 function stripFencedCode(text) {
   return text.replace(/```[\s\S]*?```/g, "");
+}
+
+// src/ProjectManager.ts
+var import_obsidian5 = require("obsidian");
+function projectFilePath(projectsFolder, tag) {
+  const filename = tag.replace(/^#/, "") + ".md";
+  return projectsFolder + filename;
+}
+var ProjectManager = class {
+  constructor(app, scanner, projectsFolder, priorityTags, excludeFolders = []) {
+    this.app = app;
+    this.scanner = scanner;
+    this.projectsFolder = projectsFolder;
+    this.priorityTags = priorityTags;
+    this.excludeFolders = excludeFolders;
+  }
+  /**
+   * Resolves which project tag(s) a single TODO belongs to, in the same
+   * precedence `getProjects()` aggregates by: explicit project tags always
+   * win; only with none present does a file under the configured projects
+   * folder (and not excluded via `excludeFoldersFromProjects`) fall back to
+   * its inferred file tag. Extracted from `getProjects()`'s aggregation loop
+   * so render-path code (e.g. SidebarView styling a vault TODO block to
+   * match a project's identity) can resolve one item without duplicating —
+   * and risking drift from — this same precedence.
+   */
+  resolveProjectTags(todo) {
+    const excludedTags = /* @__PURE__ */ new Set([
+      "#todo",
+      "#todos",
+      "#todone",
+      "#todones",
+      "#idea",
+      "#ideas",
+      "#ideation",
+      "#principle",
+      "#principles",
+      "#future",
+      "#snooze",
+      "#snoozed",
+      "#focus",
+      "#today",
+      ...this.priorityTags
+    ]);
+    const explicitProjectTags = todo.tags.filter((tag) => !excludedTags.has(tag));
+    if (explicitProjectTags.length > 0)
+      return explicitProjectTags;
+    if (todo.inferredFileTag && this.isInProjectsFolder(todo.folder)) {
+      return [todo.inferredFileTag];
+    }
+    return [];
+  }
+  /**
+   * True when `folder` (a TodoItem's own folder, no filename) sits under the
+   * configured projects folder and isn't inside an `excludeFoldersFromProjects`
+   * subfolder. Exposed separately from `resolveProjectTags()` for a caller
+   * that wants "is this file itself a project note" independent of whatever
+   * explicit tags a specific TODO in it happens to carry — see SidebarView's
+   * resolveProjectBlockMatch, which styles a block by file location alone
+   * rather than resolveProjectTags()'s explicit-tag-first precedence (a
+   * generic context tag like #work isn't a project, but explicit-tag
+   * precedence would otherwise make it look like one).
+   */
+  isInProjectsFolder(folder) {
+    const isUnderProjectsFolder = folder.startsWith(this.projectsFolder.replace(/\/$/, ""));
+    const isExcluded = this.excludeFolders.some(
+      (excluded) => folder === excluded || folder.startsWith(excluded + "/")
+    );
+    return isUnderProjectsFolder && !isExcluded;
+  }
+  /**
+   * `scannedProjects` merges in repo-derived facts (branch, status, remote,
+   * local path) for any tag that matches a detected git repo's folder name —
+   * a repo with zero tracked items still gets an entry, and a tag-only project
+   * (no matching repo) is unaffected. Synchronous: callers are expected to pass
+   * the most recent `ProjectScanner`/`ProjectSyncManager.syncAll()` result
+   * rather than triggering a fresh scan here (scanning shells out to `git` per
+   * repo — not something render-path code should trigger on its own).
+   *
+   * `getCachedItems`, when supplied, folds each repo-matched project's
+   * synced items (from `ProjectSyncManager.getCachedItems()`) into
+   * `count`/`highestPriority`/`hasFocusItems` alongside the vault-derived
+   * numbers — see `foldSyncedItemsIntoProjects` below. Callers that only
+   * care about vault items can omit it; the merge step is skipped entirely.
+   */
+  getProjects(scannedProjects = [], getCachedItems) {
+    const todos = this.scanner.getTodos();
+    const projectMap = /* @__PURE__ */ new Map();
+    for (const todo of todos) {
+      const projectTags = this.resolveProjectTags(todo);
+      const todoPriority = getPriorityValue(todo.tags);
+      const todoHasFocus = hasTag(todo.tags, "#focus");
+      for (const tag of projectTags) {
+        if (projectMap.has(tag)) {
+          const project = projectMap.get(tag);
+          project.count++;
+          project.prioritySum += todoPriority;
+          project.lastActivity = Math.max(
+            project.lastActivity,
+            todo.dateCreated
+          );
+          project.highestPriority = Math.min(
+            project.highestPriority,
+            todoPriority
+          );
+          if (todoHasFocus) {
+            project.hasFocusItems = true;
+          }
+        } else {
+          projectMap.set(tag, {
+            tag,
+            count: 1,
+            lastActivity: todo.dateCreated,
+            highestPriority: todoPriority,
+            hasFocusItems: todoHasFocus,
+            prioritySum: todoPriority,
+            colourIndex: 4
+            // default, will be calculated below
+          });
+        }
+      }
+    }
+    const projects = [];
+    for (const [, project] of projectMap) {
+      const avgPriority = project.prioritySum / project.count;
+      const colourIndex = Math.min(6, Math.round((avgPriority - 1) * 6 / 7));
+      projects.push({
+        tag: project.tag,
+        count: project.count,
+        lastActivity: project.lastActivity,
+        highestPriority: project.highestPriority,
+        hasFocusItems: project.hasFocusItems,
+        colourIndex
+      });
+    }
+    const merged = mergeScannedProjects(projects, scannedProjects);
+    const withLastUpdated = this.applyNoteLastUpdatedFallback(merged);
+    return getCachedItems ? foldSyncedItemsIntoProjects(withLastUpdated, getCachedItems) : withLastUpdated;
+  }
+  /**
+   * Vault-note-mtime fallback for `lastUpdated`, for a repo with no
+   * CHANGELOG.md, README.md, or PLAN.md on disk (ProjectScanner/
+   * ProjectMetadata already tried all three — see getRepoLastUpdated). The note's own
+   * last-modified time is the next-best "recently updated" signal, and
+   * unlike the repo's own files it's always resolvable here: ProjectManager
+   * owns the vault side, ProjectMetadata only knows about files in the repo
+   * itself.
+   */
+  applyNoteLastUpdatedFallback(projects) {
+    return projects.map((project) => {
+      if (!project.localPath || project.lastUpdated !== void 0)
+        return project;
+      const file = this.app.vault.getAbstractFileByPath(this.getProjectFilePath(project.tag));
+      if (!(file instanceof import_obsidian5.TFile) || !file.stat)
+        return project;
+      return { ...project, lastUpdated: file.stat.mtime };
+    });
+  }
+  getFocusProjects(limit) {
+    const projects = this.getProjects();
+    projects.sort((a, b) => {
+      if (a.hasFocusItems && !b.hasFocusItems)
+        return -1;
+      if (!a.hasFocusItems && b.hasFocusItems)
+        return 1;
+      const priorityDiff = a.highestPriority - b.highestPriority;
+      if (priorityDiff !== 0)
+        return priorityDiff;
+      return b.count - a.count;
+    });
+    if (limit !== void 0 && limit > 0) {
+      return projects.slice(0, limit);
+    }
+    return projects;
+  }
+  getProjectFilePath(tag) {
+    return projectFilePath(this.projectsFolder, tag);
+  }
+  async getProjectFileInfo(tag) {
+    var _a, _b;
+    const filepath = this.getProjectFilePath(tag);
+    const file = this.app.vault.getAbstractFileByPath(filepath);
+    if (!(file instanceof import_obsidian5.TFile)) {
+      return null;
+    }
+    const content = await this.app.vault.read(file);
+    const lines = content.split("\n");
+    let startIndex = 0;
+    if (((_a = lines[0]) == null ? void 0 : _a.trim()) === "---") {
+      for (let i = 1; i < lines.length; i++) {
+        if (((_b = lines[i]) == null ? void 0 : _b.trim()) === "---") {
+          startIndex = i + 1;
+          break;
+        }
+      }
+    }
+    const blocks = [];
+    let currentBlock = "";
+    let inCodeBlock = false;
+    let inCallout = false;
+    for (let i = startIndex; i < lines.length && blocks.length < 2; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (trimmed.startsWith("```")) {
+        inCodeBlock = !inCodeBlock;
+        if (currentBlock) {
+          blocks.push(currentBlock.trim());
+          currentBlock = "";
+          inCallout = false;
+        }
+        continue;
+      }
+      if (inCodeBlock) {
+        continue;
+      }
+      if (trimmed.startsWith("#") && trimmed.match(/^#+\s/)) {
+        if (currentBlock) {
+          blocks.push(currentBlock.trim());
+          currentBlock = "";
+          inCallout = false;
+        }
+        continue;
+      }
+      if (trimmed === tag) {
+        continue;
+      }
+      if (trimmed.match(/^\{\{.*\}\}$/)) {
+        continue;
+      }
+      if (trimmed.match(/^>\s*\[!/)) {
+        if (currentBlock) {
+          blocks.push(currentBlock.trim());
+          currentBlock = "";
+        }
+        inCallout = true;
+        currentBlock = line;
+        continue;
+      }
+      if (inCallout && trimmed.startsWith(">")) {
+        currentBlock += "\n" + line;
+        continue;
+      }
+      if (inCallout && !trimmed.startsWith(">")) {
+        if (currentBlock) {
+          blocks.push(currentBlock.trim());
+          currentBlock = "";
+        }
+        inCallout = false;
+      }
+      if (trimmed === "") {
+        if (currentBlock) {
+          blocks.push(currentBlock.trim());
+          currentBlock = "";
+        }
+        continue;
+      }
+      const cleanedLine = trimmed.replace(/\{\{[^}]*\}\}/g, "").trim();
+      if (cleanedLine) {
+        currentBlock += (currentBlock ? " " : "") + cleanedLine;
+      }
+    }
+    if (currentBlock && blocks.length < 2) {
+      blocks.push(currentBlock.trim());
+    }
+    if (blocks.length > 0) {
+      const lastBlock = blocks[blocks.length - 1];
+      const blockLines = lastBlock.split("\n");
+      while (blockLines.length > 0) {
+        const lastLine = blockLines[blockLines.length - 1].trim();
+        if (lastLine.match(/^#+\s/)) {
+          blockLines.pop();
+        } else {
+          break;
+        }
+      }
+      if (blockLines.length === 0) {
+        blocks.pop();
+      } else {
+        blocks[blocks.length - 1] = blockLines.join("\n").trim();
+      }
+    }
+    const principleRegex = /#principles?\b/gi;
+    const principlesInFile = [];
+    for (const line of lines) {
+      if (line.match(principleRegex)) {
+        const tagMatches = line.match(/#[\w-]+/g);
+        if (tagMatches) {
+          for (const match of tagMatches) {
+            if (!match.match(/^#principles?$/i) && !principlesInFile.includes(match)) {
+              principlesInFile.push(match);
+            }
+          }
+        }
+      }
+    }
+    return {
+      description: blocks.join("\n\n"),
+      principles: principlesInFile,
+      filepath
+    };
+  }
+  async openProjectFile(tag) {
+    const filename = tag.replace(/^#/, "") + ".md";
+    const filepath = this.projectsFolder + filename;
+    const file = this.app.vault.getAbstractFileByPath(filepath);
+    if (file instanceof import_obsidian5.TFile) {
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(file);
+    } else {
+      const confirmed = await this.confirmCreateProjectFile(tag, filepath);
+      if (confirmed) {
+        await this.createProjectFile(filepath, tag);
+      }
+    }
+  }
+  confirmCreateProjectFile(tag, filepath) {
+    return new Promise((resolve) => {
+      const modal = new import_obsidian5.Modal(this.app);
+      modal.titleEl.setText("Create Project File?");
+      modal.contentEl.createEl("p", {
+        text: `Create project file for ${tag} in ${this.projectsFolder}?`
+      });
+      const buttonContainer = modal.contentEl.createEl("div", {
+        cls: "modal-button-container"
+      });
+      buttonContainer.style.display = "flex";
+      buttonContainer.style.justifyContent = "flex-end";
+      buttonContainer.style.gap = "8px";
+      buttonContainer.style.marginTop = "16px";
+      const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+      cancelBtn.addEventListener("click", () => {
+        modal.close();
+        resolve(false);
+      });
+      const createBtn = buttonContainer.createEl("button", {
+        text: "Create",
+        cls: "mod-cta"
+      });
+      createBtn.addEventListener("click", () => {
+        modal.close();
+        resolve(true);
+      });
+      modal.open();
+    });
+  }
+  async createProjectFile(filepath, tag) {
+    const folderPath = filepath.substring(0, filepath.lastIndexOf("/"));
+    if (folderPath && !this.app.vault.getAbstractFileByPath(folderPath)) {
+      await this.app.vault.createFolder(folderPath);
+    }
+    const projectName = tag.replace(/^#/, "");
+    const content = `# ${projectName}
+
+${tag}
+
+## Guiding Principles #principles
+
+## Overview
+
+## TODOs
+
+`;
+    const file = await this.app.vault.create(filepath, content);
+    const leaf = this.app.workspace.getLeaf(false);
+    await leaf.openFile(file);
+  }
+};
+function mergeScannedProjects(projects, scannedProjects) {
+  if (scannedProjects.length === 0)
+    return projects;
+  const scannedByName = new Map(scannedProjects.map((p) => [p.name, p]));
+  const merged = /* @__PURE__ */ new Map();
+  for (const project of projects) {
+    const name = project.tag.replace(/^#/, "");
+    const scanned = scannedByName.get(name);
+    merged.set(name, scanned ? { ...project, ...repoFields(scanned) } : project);
+  }
+  for (const [name, scanned] of scannedByName) {
+    if (merged.has(name))
+      continue;
+    merged.set(name, {
+      tag: `#${name}`,
+      count: 0,
+      lastActivity: 0,
+      highestPriority: 8,
+      // unmarked-item value, matches getPriorityValue's default
+      hasFocusItems: false,
+      colourIndex: 4,
+      ...repoFields(scanned)
+    });
+  }
+  return [...merged.values()];
+}
+function foldSyncedItemsIntoProjects(projects, getCachedItems) {
+  return projects.map((project) => {
+    if (!project.localPath)
+      return project;
+    const items = getCachedItems(project.localPath).filter((i) => !i.completed);
+    if (items.length === 0)
+      return project;
+    let count = project.count;
+    let highestPriority = project.highestPriority;
+    let hasFocusItems = project.hasFocusItems;
+    for (const item of items) {
+      count++;
+      highestPriority = Math.min(highestPriority, getPriorityValue(item.tags));
+      if (hasTag(item.tags, "#focus"))
+        hasFocusItems = true;
+    }
+    return { ...project, count, highestPriority, hasFocusItems };
+  });
+}
+function repoFields(scanned) {
+  var _a, _b, _c;
+  return {
+    localPath: scanned.localPath,
+    remote: scanned.remote,
+    branch: scanned.branch,
+    gitStatus: scanned.gitStatus,
+    title: scanned.title,
+    stack: scanned.stack,
+    readmeSummary: (_a = scanned.readmeSummary) != null ? _a : void 0,
+    planSummary: (_b = scanned.planSummary) != null ? _b : void 0,
+    lastUpdated: (_c = scanned.lastUpdated) != null ? _c : void 0
+  };
 }
 
 // src/ProjectSyncManager.ts
@@ -4871,6 +4874,7 @@ async function scanPosts(site) {
         path,
         section: sectionFor(site.contentDir, path),
         draft: frontmatter.draft,
+        date: frontmatter.date,
         mtimeMs,
         summary: frontmatter.summary
       });
@@ -8634,6 +8638,157 @@ function createHeaderChecklistExtension() {
   );
 }
 
+// src/ScanSnapshot.ts
+var SNAPSHOT_SCHEMA = 1;
+var SNAPSHOT_FILE_PATH = "warped-command-snapshot.json";
+var byCodePoint = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+function highestPriorityTag(tags) {
+  for (const p of ["p0", "p1", "p2", "p3", "p4"]) {
+    if (hasTag(tags, `#${p}`))
+      return p;
+  }
+  return null;
+}
+function lifecycleFlags(tags) {
+  return {
+    priority: highestPriorityTag(tags),
+    today: hasTag(tags, "#today"),
+    focus: hasTag(tags, "#focus"),
+    snoozed: hasTag(tags, "#future") || hasTag(tags, "#snooze") || hasTag(tags, "#snoozed")
+  };
+}
+function vaultItemSource(item) {
+  if (item.isHeader)
+    return "taggedHeading";
+  if (item.parentLineNumber !== void 0)
+    return "headerChild";
+  return "taggedLine";
+}
+function headingLabel(text) {
+  return text.replace(/^\s*#{1,6}\s+/, "").replace(/#[\w-]+/g, "").replace(/@[\w][\w.-]*/g, "").replace(/\s+/g, " ").trim();
+}
+function vaultItemRows(items) {
+  const byLine = /* @__PURE__ */ new Map();
+  for (const item of items)
+    byLine.set(`${item.filePath}
+${item.lineNumber}`, item);
+  return items.map((item) => {
+    var _a, _b;
+    const parent = item.parentLineNumber !== void 0 ? byLine.get(`${item.filePath}
+${item.parentLineNumber}`) : void 0;
+    const section = parent ? headingLabel(parent.text) : (_a = item.sectionLabel) != null ? _a : null;
+    return {
+      root: "vault",
+      file: item.filePath,
+      line: item.lineNumber + 1,
+      text: item.text,
+      kind: item.itemType === "todone" ? "todo" : (_b = item.itemType) != null ? _b : "todo",
+      status: item.itemType === "todone" ? "done" : "open",
+      tags: [...item.tags].sort(byCodePoint),
+      ...lifecycleFlags(item.tags),
+      section: section || null,
+      source: vaultItemSource(item),
+      shape: null
+    };
+  });
+}
+function structuredItemRows(repo) {
+  const rows = [];
+  for (const file of repo.structuredFiles) {
+    for (const item of file.items) {
+      rows.push({
+        root: "projects",
+        file: `${repo.path}/${file.name}`,
+        line: item.lineNumber + 1,
+        text: item.text,
+        kind: item.itemType,
+        status: item.completed ? "done" : "open",
+        tags: [...item.tags].sort(byCodePoint),
+        ...lifecycleFlags(item.tags),
+        section: null,
+        source: "structuredFile",
+        shape: item.shape
+      });
+    }
+  }
+  return rows;
+}
+function compareItems(a, b) {
+  return byCodePoint(a.root, b.root) || byCodePoint(a.file, b.file) || a.line - b.line || byCodePoint(a.kind, b.kind) || byCodePoint(a.text, b.text);
+}
+function buildSnapshot(input) {
+  const repos = [...input.repos].sort((a, b) => byCodePoint(a.path, b.path));
+  const items = [
+    ...vaultItemRows(input.vaultItems),
+    ...repos.flatMap(structuredItemRows)
+  ].sort(compareItems);
+  const structuredFiles = repos.flatMap(
+    (repo) => repo.structuredFiles.map((file) => ({
+      project: repo.name,
+      file: `${repo.path}/${file.name}`,
+      shape: hasHeaderReportShape(file.content.split("\n")) ? "headerReport" : "flatList",
+      itemCount: file.items.length
+    }))
+  );
+  const plans = repos.filter((repo) => repo.plan).map((repo) => ({
+    project: repo.name,
+    done: repo.plan.doneCount,
+    total: repo.plan.totalCount,
+    phases: repo.plan.phases.map((p) => ({ name: p.heading, done: p.done, total: p.total }))
+  }));
+  const projects = repos.map((repo) => {
+    const tag = `#${repo.name}`.toLowerCase();
+    const linkedItems = input.vaultItems.filter((item) => input.resolveProjectTags(item).some((t) => t.toLowerCase() === tag)).map((item) => ({ file: item.filePath, line: item.lineNumber + 1 })).sort((a, b) => byCodePoint(a.file, b.file) || a.line - b.line);
+    return {
+      name: repo.name,
+      path: repo.path,
+      title: repo.title,
+      stack: [...repo.stack].sort(byCodePoint),
+      branch: repo.branch || null,
+      remote: repo.remote || null,
+      tag: `#${repo.name}`,
+      noteFile: repo.noteFile,
+      linkedItems
+    };
+  });
+  const posts = [...input.posts].sort((a, b) => byCodePoint(a.path, b.path)).map((post) => {
+    var _a, _b;
+    return {
+      file: post.path,
+      section: post.section,
+      title: post.title,
+      date: (_a = post.date) != null ? _a : null,
+      draft: post.draft,
+      summary: (_b = post.summary) != null ? _b : null
+    };
+  });
+  return {
+    schema: SNAPSHOT_SCHEMA,
+    version: input.version,
+    generatedAt: input.generatedAt,
+    items,
+    taskFiles: { plans, structured: structuredFiles },
+    projects,
+    hugo: { contentDir: input.hugoContentDir, posts }
+  };
+}
+function sortKeys(value) {
+  if (Array.isArray(value))
+    return value.map(sortKeys);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const key of Object.keys(value).sort(byCodePoint)) {
+      const v = value[key];
+      out[key] = v === void 0 ? null : sortKeys(v);
+    }
+    return out;
+  }
+  return value;
+}
+function serializeSnapshot(snapshot) {
+  return JSON.stringify(sortKeys(snapshot), null, 2) + "\n";
+}
+
 // src/HugoTitleLinks.ts
 var TitleLinkIndex = class {
   constructor() {
@@ -9171,6 +9326,19 @@ var WarpedTodoPlugin = class extends import_obsidian16.Plugin {
         showNotice2("Projects synced.");
       }
     });
+    this.addCommand({
+      id: "export-scan-snapshot",
+      name: "Export scan snapshot",
+      callback: async () => {
+        try {
+          await this.app.vault.adapter.write(SNAPSHOT_FILE_PATH, await this.buildScanSnapshot());
+          showNotice2(`Scan snapshot written to ${SNAPSHOT_FILE_PATH} (vault root).`);
+        } catch (error) {
+          console.error("[Warped Command] Snapshot export failed:", error);
+          showNotice2("Scan snapshot export failed. See the console for details.");
+        }
+      }
+    });
     this.addRibbonIcon("square-check-big", "Toggle TODO Sidebar", () => {
       this.sidebarManager.toggle();
     });
@@ -9201,6 +9369,68 @@ var WarpedTodoPlugin = class extends import_obsidian16.Plugin {
     } else {
       this.titleLinkResolver.enable(contentPrefix);
     }
+  }
+  /**
+   * Runs the plugin's real scans and serializes them for "Export scan
+   * snapshot" (see ScanSnapshot.ts). Read-only on the Projects side: it
+   * scans repos and parses their files but doesn't sync project notes.
+   */
+  async buildScanSnapshot() {
+    await this.scanner.scanVault();
+    const vaultItems = [
+      ...this.scanner.getTodos(),
+      ...this.scanner.getTodones(),
+      ...this.scanner.getIdeas(),
+      ...this.scanner.getPrinciples()
+    ];
+    const repos = [];
+    const baseFolder = this.settings.projectsBaseFolder;
+    if (baseFolder) {
+      const scanned = dedupeByName(await this.projectScanner.scan({
+        baseFolder,
+        maxDepth: this.settings.projectsScanDepth,
+        excludeDirs: this.settings.projectsExcludeDirs
+      }));
+      for (const project of scanned) {
+        const items = await this.projectSyncManager.getProjectItems(project.localPath);
+        const structuredFiles = [];
+        for (const name of STRUCTURED_FILENAMES) {
+          const path = (0, import_path8.join)(project.localPath, name);
+          if (!(0, import_fs6.existsSync)(path))
+            continue;
+          structuredFiles.push({
+            name,
+            content: await (0, import_promises7.readFile)(path, "utf-8"),
+            items: items.filter((item) => item.sourceFile === path)
+          });
+        }
+        repos.push({
+          name: project.name,
+          path: (0, import_path8.relative)(baseFolder, project.localPath).split(import_path8.sep).join("/"),
+          title: project.title,
+          stack: project.stack,
+          branch: project.branch,
+          remote: project.remote,
+          noteFile: projectFilePath(this.settings.defaultProjectsFolder, project.name),
+          structuredFiles,
+          plan: project.planSummary
+        });
+      }
+    }
+    const adapter = this.app.vault.adapter;
+    const basePath = adapter instanceof import_obsidian16.FileSystemAdapter ? adapter.getBasePath() : null;
+    const site = basePath ? await readHugoSite(basePath) : null;
+    const toVaultPath = (abs) => (0, import_path8.relative)(basePath != null ? basePath : "", abs).split(import_path8.sep).join("/");
+    const posts = site ? (await scanPosts(site)).map((post) => ({ ...post, path: toVaultPath(post.path) })) : [];
+    return serializeSnapshot(buildSnapshot({
+      version: this.manifest.version,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      vaultItems,
+      repos,
+      resolveProjectTags: (item) => this.projectManager.resolveProjectTags(item),
+      hugoContentDir: site ? toVaultPath(site.contentDir) || "." : null,
+      posts
+    }));
   }
   /** Builds ProjectSyncManager's SyncOptions/ProjectsSidebarOptions from current settings. */
   projectsSyncOptions() {

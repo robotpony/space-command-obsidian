@@ -12,9 +12,10 @@ import {
   Vault,
 } from "obsidian";
 import { join, relative, sep } from "path";
+import { existsSync } from "fs";
+import { readFile } from "fs/promises";
 import { TodoScanner } from "./src/TodoScanner";
 import { TodoProcessor } from "./src/TodoProcessor";
-import { ProjectManager } from "./src/ProjectManager";
 import { ProjectScanner } from "./src/ProjectScanner";
 import { ProjectSyncManager } from "./src/ProjectSyncManager";
 import { SlashCommandSuggest } from "./src/SlashCommandSuggest";
@@ -41,7 +42,10 @@ import { TabLockManager } from "./src/TabLockManager";
 import { createHeaderSortPlugin } from "./src/HeaderSortExtension";
 import { createHeaderChecklistExtension } from "./src/HeaderChecklistExtension";
 import { SidebarManager } from "./src/shared";
-import { readHugoSite } from "./src/HugoScanner";
+import { readHugoSite, scanPosts } from "./src/HugoScanner";
+import { buildSnapshot, serializeSnapshot, SNAPSHOT_FILE_PATH, SnapshotRepoInput } from "./src/ScanSnapshot";
+import { dedupeByName, STRUCTURED_FILENAMES } from "./src/ProjectSyncManager";
+import { ProjectManager, projectFilePath } from "./src/ProjectManager";
 import { HugoTitleLinkResolver } from "./src/HugoTitleLinks";
 import { guessProjectsFolder, homeRelativePath, PROJECT_SORT_OPTIONS } from "./src/ProjectsSidebarView";
 
@@ -504,6 +508,20 @@ export default class WarpedTodoPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: "export-scan-snapshot",
+      name: "Export scan snapshot",
+      callback: async () => {
+        try {
+          await this.app.vault.adapter.write(SNAPSHOT_FILE_PATH, await this.buildScanSnapshot());
+          showNotice(`Scan snapshot written to ${SNAPSHOT_FILE_PATH} (vault root).`);
+        } catch (error) {
+          console.error("[Warped Command] Snapshot export failed:", error);
+          showNotice("Scan snapshot export failed. See the console for details.");
+        }
+      },
+    });
+
     // Add ribbon icon. Projects doesn't get its own — it's a tab within
     // this same sidebar (see ProjectsSidebarView.ts's file-level comment),
     // reached via the Projects tab button or the "toggle-projects-sidebar"
@@ -542,6 +560,73 @@ export default class WarpedTodoPlugin extends Plugin {
     } else {
       this.titleLinkResolver.enable(contentPrefix);
     }
+  }
+
+  /**
+   * Runs the plugin's real scans and serializes them for "Export scan
+   * snapshot" (see ScanSnapshot.ts). Read-only on the Projects side: it
+   * scans repos and parses their files but doesn't sync project notes.
+   */
+  async buildScanSnapshot(): Promise<string> {
+    await this.scanner.scanVault();
+    const vaultItems = [
+      ...this.scanner.getTodos(),
+      ...this.scanner.getTodones(),
+      ...this.scanner.getIdeas(),
+      ...this.scanner.getPrinciples(),
+    ];
+
+    const repos: SnapshotRepoInput[] = [];
+    const baseFolder = this.settings.projectsBaseFolder;
+    if (baseFolder) {
+      const scanned = dedupeByName(await this.projectScanner.scan({
+        baseFolder,
+        maxDepth: this.settings.projectsScanDepth,
+        excludeDirs: this.settings.projectsExcludeDirs,
+      }));
+      for (const project of scanned) {
+        const items = await this.projectSyncManager.getProjectItems(project.localPath);
+        const structuredFiles: SnapshotRepoInput["structuredFiles"] = [];
+        for (const name of STRUCTURED_FILENAMES) {
+          const path = join(project.localPath, name);
+          if (!existsSync(path)) continue;
+          structuredFiles.push({
+            name,
+            content: await readFile(path, "utf-8"),
+            items: items.filter((item) => item.sourceFile === path),
+          });
+        }
+        repos.push({
+          name: project.name,
+          path: relative(baseFolder, project.localPath).split(sep).join("/"),
+          title: project.title,
+          stack: project.stack,
+          branch: project.branch,
+          remote: project.remote,
+          noteFile: projectFilePath(this.settings.defaultProjectsFolder, project.name),
+          structuredFiles,
+          plan: project.planSummary,
+        });
+      }
+    }
+
+    const adapter = this.app.vault.adapter;
+    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+    const site = basePath ? await readHugoSite(basePath) : null;
+    const toVaultPath = (abs: string) => relative(basePath ?? "", abs).split(sep).join("/");
+    const posts = site
+      ? (await scanPosts(site)).map((post) => ({ ...post, path: toVaultPath(post.path) }))
+      : [];
+
+    return serializeSnapshot(buildSnapshot({
+      version: this.manifest.version,
+      generatedAt: new Date().toISOString(),
+      vaultItems,
+      repos,
+      resolveProjectTags: (item) => this.projectManager.resolveProjectTags(item),
+      hugoContentDir: site ? toVaultPath(site.contentDir) || "." : null,
+      posts,
+    }));
   }
 
   /** Builds ProjectSyncManager's SyncOptions/ProjectsSidebarOptions from current settings. */

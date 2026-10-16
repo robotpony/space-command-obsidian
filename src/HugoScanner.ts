@@ -112,6 +112,7 @@ export async function scanPosts(site: HugoSite): Promise<HugoPost[]> {
         path,
         section: sectionFor(site.contentDir, path),
         draft: frontmatter.draft,
+        date: frontmatter.date,
         mtimeMs,
         summary: frontmatter.summary,
       });

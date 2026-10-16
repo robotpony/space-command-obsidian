@@ -307,6 +307,7 @@ These insert with the "Insert date format" setting (default `dddd, MMMM Do`, e.g
 | Toggle Projects tab            | —                    | Switch to the Projects tab                              |
 | Sync Projects                  | —                    | Re-scan every repo under the configured base folder and update their notes |
 | Send selection to project      | —                    | From a project note only: appends the current selection as a new `#todo` item in that project's `TODO.md`. See [Sending work to a project](#sending-work-to-a-project). |
+| Export scan snapshot           | —                    | Re-scans the vault, repos, and Hugo posts and writes what was parsed to `warped-command-snapshot.json` at the vault root: sorted, 2-space JSON you can `diff` between runs. Doesn't sync project notes. |
 
 The ribbon icon toggles the sidebar. The kebab (⋯) button at the right of the tab row opens the menu for **Stats**, **Refresh**, **About**, and **Settings**; **Sync** joins that list while you're on the Projects tab.
 

@@ -261,6 +261,8 @@ export interface HugoPost {
   /** First path segment under contentDir; "(root)" for a file directly at contentDir's top level. */
   section: string;
   draft: boolean;
+  /** Frontmatter `date`, falling back to `lastmod`; absent when neither is set. */
+  date?: string;
   /** File mtime in ms, used for the compact "~Xd" relative label and within-section sort. */
   mtimeMs: number;
   /** Frontmatter `description`/`summary`, falling back to the body's opening paragraph. See HugoParser.parsePostFrontmatter. */
