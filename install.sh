@@ -23,6 +23,8 @@ CONFIG_FILE="$SCRIPT_DIR/.install-vaults"
 # plugin's folder to be called; DISPLAY_NAME is just for messages.
 PLUGIN_NAME=$(grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' "$SCRIPT_DIR/manifest.json" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
 DISPLAY_NAME=$(grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' "$SCRIPT_DIR/manifest.json" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+# Shown in the messages, so you can match it against Settings → Community plugins after a reload.
+PLUGIN_VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$SCRIPT_DIR/manifest.json" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
 
 # Spinner frames
 SPINNER_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
@@ -287,7 +289,7 @@ main() {
         esac
     done
 
-    echo "${BOLD}${BLUE}$DISPLAY_NAME Installer${NC}"
+    echo "${BOLD}${BLUE}$DISPLAY_NAME Installer${NC} (v$PLUGIN_VERSION)"
 
     # Build
     print_header "Building..."
@@ -358,14 +360,14 @@ main() {
 
     # Install
     print_header "Installing..."
-    echo "${BOLD}$DISPLAY_NAME${NC} →"
+    echo "${BOLD}$DISPLAY_NAME${NC} v$PLUGIN_VERSION →"
     for vault_dir in "${vaults_to_install[@]}"; do
         echo -n "  "
         install_plugin "$vault_dir"
     done
 
     echo ""
-    print_success "${BOLD}Done.${NC} Reload Obsidian to activate changes."
+    print_success "${BOLD}Done.${NC} Installed v$PLUGIN_VERSION. Reload Obsidian to activate changes."
 }
 
 main "$@"
