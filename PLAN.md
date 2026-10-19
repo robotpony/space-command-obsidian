@@ -172,7 +172,7 @@ Jumping to a line is the weak spot today (`obsidian://open` has no line without 
   - Landing order: the given line if its normalised text matches; otherwise the matching line nearest the given line, with `heading=` (the section heading) breaking ties; no match → the given line, clamped to the file.
   - Then briefly highlight the line (a CodeMirror line decoration that fades).
   - "Open in Space Command" sends the cursor line's normalised text and section heading the same way.
-- [ ] Space Command side (commander's work, approved): the URL scheme, passing `line` (and `text`) to the plugin's handler when it detects the plugin (read-only: `<vault>/.obsidian/plugins/space-command/manifest.json` and the id in `.obsidian/community-plugins.json`), falling back to `obsidian://open`.
+- [x] Space Command side (commander's work, approved): the URL scheme, passing `line` (and `text`) to the plugin's handler when it detects the plugin (read-only: `<vault>/.obsidian/plugins/space-command/manifest.json` and the id in `.obsidian/community-plugins.json`), falling back to `obsidian://open`. Shipped in Space Command 0.72.0; it checks for `warped-todo` first, then `space-command`, so it works before and after the Phase 7 rename. Round trip not yet tested by hand (Space Command's T15).
 
 ## Phase 7 (later): Rename, docs, distribution, merge
 
