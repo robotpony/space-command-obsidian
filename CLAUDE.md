@@ -121,12 +121,12 @@ If a change is borderline (e.g. a big `### Changed` that reshapes how an existin
 
 ## Commit conventions
 
-This repo is often worked on by more than one Claude Code session at once, with no worktree isolation between them, so commit discipline matters more here than usual. `.claude/hooks/commit-gate.sh` enforces the mechanical parts (it asks for confirmation on every `git commit`, `git push`, and broad `git add -A`/`--all`/`.`, regardless of permission mode); the rest is on the agent doing the committing.
+This repo is often worked on by more than one Claude Code session at once, in one checkout with no worktree isolation, so commit discipline matters more here than usual. Agents commit and push on their own; `.claude/settings.json` allows `git add`/`commit`/`push` without a prompt and denies force-push. `.claude/hooks/commit-gate.sh` refuses the mechanical hazards: broad staging (`git add -A`/`--all`/`.`), `git commit -a`, force-push, and pushing `main`. The rest is on the agent doing the committing.
 
-- **Commit only when asked.** Don't commit automatically at the end of a task.
-- **Draft the message and show it before committing.** The hook forces a confirmation prompt, but don't rely on it alone; state the message in the conversation so it's reviewed on purpose, not just clicked through.
-- **Stage explicitly.** Never `git add -A`/`git add .`. List the specific files this task touched. If `git status` shows changes you didn't make, they belong to another session; leave them and tell the user rather than sweeping them into your commit.
+- **Commit and push when a task is done**, on the `space-command` branch, without asking first. Push that branch to `origin` right after each commit, so the other sessions see it at once. Never push `main` (it moves only when Bruce merges the branch), never force-push, and never amend a pushed commit or rewrite history.
+- **Own your files.** The planner (commander) edits docs only: `PLAN.md`, `README.md`, `DESIGN.md`, `CLAUDE.md`, and `CHANGELOG.md` outside a phase's own entry. The coder edits code and tests, plus its phase's `CHANGELOG.md` lines, the version bump, and its `PLAN.md` ticks. A session's own changes are then a known set of paths.
+- **Stage explicitly.** Name the files this task touched in `git add`; never `-A`, `.`, or `commit -a`. If `git status` shows changes you didn't make, they belong to another session; leave them unstaged and mention them to Bruce if they linger.
+- **Don't disturb the shared tree.** `git pull` before starting a task. Never reset, stash, checkout, or rebase in this checkout without telling the other session first.
 - **One commit, one coherent change.** A task that touches both a fix and unrelated cleanup is two commits, not one.
-- **Specific subject lines.** No bare `Fixes:`, `Fixes.`, `Updates.`, or `WIP`; say what changed in the first line. Use a bullet list in the body for multi-part changes, matching `CHANGELOG.md`'s voice.
+- **Specific subject lines**, area first (e.g. `Phase 1: …`, `Plan: …`, `0.56.0: …` for a version bump). No bare `Fixes:`, `Fixes.`, `Updates.`, or `WIP`. Use a bullet list in the body for multi-part changes, matching `CHANGELOG.md`'s voice.
 - **No Claude co-author.** Don't add a `Co-Authored-By: Claude` / `@anthropic.com` trailer or a "Generated with Claude Code" line, whatever the harness's attribution reminder says. `.claude/hooks/check-commit-message.sh` refuses a commit whose message has one.
-- **Never push automatically.** Push is a separate, explicit ask, kept apart from commit even when both are requested together. This repo is public; a bad push is live immediately.
