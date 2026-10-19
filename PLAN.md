@@ -37,7 +37,7 @@ Bruce's answers (2026-10-19), by question number:
 - **Branch `space-command`**, long-lived; `main` keeps the current plugin until the branch merges at 1.0.0.
 - Worked directly in this checkout, no worktree (Bruce, 2026-10-19): only two agents (the planner and the coder) touch the tree, and no humans. Both stay on the branch; hotfixes for `main` wait or go through Bruce.
 - Each phase bumps `package.json`/`manifest.json` from where they stand, by CLAUDE.md's patch/minor rule, never as far as 1.0.0 (Bruce, 2026-10-19), so a test build's number says which phase it carries. Phase 1 is 0.56.0. `CHANGELOG.md` still gets one `1.0.0` entry, built up phase by phase (`### Removed`, `### Changed`, `### Added`). Patches to `main` in the meantime keep their own versions and are merged into the branch as they land.
-- Each phase ends with `npm run build` and `npm test` green, and is committed and pushed on the branch when done, without asking (Bruce, 2026-10-19; see CLAUDE.md's Commit conventions). The branch has no upstream yet, so the first push is `git push -u origin space-command`.
+- Each phase ends with `npm run build` and `npm test` green, and is committed and pushed on the branch when done, without asking (Bruce, 2026-10-19; see CLAUDE.md's Commit conventions).
 
 ## Rules for every phase
 
