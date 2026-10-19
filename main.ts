@@ -12,7 +12,7 @@ import { join, sep } from "path";
 import { SlashCommandSuggest } from "./src/SlashCommandSuggest";
 import { AtSuggest } from "./src/AtSuggest";
 import { TeamManager } from "./src/TeamManager";
-import { HelpNoteManager, majorMinor } from "./src/HelpNoteManager";
+import { HELP_NOTE_PATH, HelpNoteManager } from "./src/HelpNoteManager";
 import { WarpedTodoSettings, DEFAULT_SETTINGS } from "./src/types";
 import { pluralize, showNotice, formatDate, DATE_FORMAT_PRESETS } from "./src/utils";
 import { MoveTargetModal } from "./src/MoveTargetModal";
@@ -54,15 +54,6 @@ export default class WarpedTodoPlugin extends Plugin {
 
     this.app.workspace.onLayoutReady(async () => {
       await this.teamManager.load();
-
-      // First-use help note: created and revealed on first install only.
-      // Later version bumps leave it alone, so a deleted note stays deleted;
-      // Settings → Help → "Show onboarding doc again" recreates it on demand.
-      if (!this.settings.helpNoteLastSeenVersion) {
-        this.settings.helpNoteLastSeenVersion = majorMinor(this.manifest.version);
-        await this.saveSettings();
-        void this.helpNoteManager.open();
-      }
     });
 
     // Register editor extension for header sort buttons
@@ -467,12 +458,14 @@ class WarpedTodoSettingTab extends PluginSettingTab {
     // Help section (last)
     containerEl.createEl("h3", { text: "Help" });
 
+    const helpExists = this.app.vault.getAbstractFileByPath(HELP_NOTE_PATH) instanceof TFile;
     new Setting(containerEl)
-      .setName("Onboarding")
-      .setDesc("Reopen the first-use help note, with live #todo/#idea examples you can try.")
+      .setName("Help note")
+      .setDesc(`A note of live #todo/#idea examples you can try, at "${HELP_NOTE_PATH}". Created only when you ask.`)
       .addButton((btn) =>
-        btn.setButtonText("Show onboarding doc again").onClick(async () => {
+        btn.setButtonText(helpExists ? "Open help note" : "Create help note").onClick(async () => {
           await this.plugin.helpNoteManager.open();
+          this.display();
         })
       );
 

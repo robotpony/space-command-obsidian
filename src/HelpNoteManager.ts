@@ -1,17 +1,9 @@
 import { App, TFile } from "obsidian";
 
-/** Fixed vault-root path for the first-use help note. Not user-configurable
+/** Fixed vault-root path for the help note. Not user-configurable
  * (unlike teamFilePath) — it's plugin-authored seed content, not something
  * that needs pointing at an existing file. */
 export const HELP_NOTE_PATH = "Warped Command Help.md";
-
-/** First two dot-separated segments of a semver-ish string, e.g. "0.46.0" -> "0.46".
- * This project keeps major reserved at 0 (see CLAUDE.md's versioning rules) and bumps
- * minor for new/removed capability, so major.minor together is the segment that actually
- * tracks "something changed worth knowing about." */
-export function majorMinor(version: string): string {
-  return version.split(".").slice(0, 2).join(".");
-}
 
 function buildHelpNoteContent(): string {
   return `> [!warning] Live example
@@ -55,16 +47,14 @@ shortcuts, see the [full README](https://github.com/robotpony/warped-command/blo
 
 This note is yours now. Delete it, edit it, or leave it as a running
 scratchpad. Warped Command never overwrites it, and won't bring it back
-if you delete it. To get a fresh copy, use Settings → Help → "Show
-onboarding doc again".
+if you delete it. To get a fresh copy, use Settings → Help → "Create
+help note".
 `;
 }
 
-/** Creates and reveals the first-use help note. Content is written once, on
- * creation, and never rewritten — see the note's own closing paragraph.
- * Auto-revealed only on first install (settings.helpNoteLastSeenVersion
- * empty); after that only the Settings button calls open(), which recreates
- * the note if the user deleted it. */
+/** The help note, created only from Settings → Help, never on install or
+ * load. Content is written once, on creation, and never rewritten — see the
+ * note's own closing paragraph. Opening it again recreates it if deleted. */
 export class HelpNoteManager {
   constructor(private app: App) {}
 

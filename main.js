@@ -1108,9 +1108,6 @@ var TeamManager = class extends import_obsidian5.Events {
 // src/HelpNoteManager.ts
 var import_obsidian6 = require("obsidian");
 var HELP_NOTE_PATH = "Warped Command Help.md";
-function majorMinor(version) {
-  return version.split(".").slice(0, 2).join(".");
-}
 function buildHelpNoteContent() {
   return `> [!warning] Live example
 > This note is a live example, not documentation. Everything below works exactly like it would in any other note in your vault. Try it.
@@ -1153,8 +1150,8 @@ shortcuts, see the [full README](https://github.com/robotpony/warped-command/blo
 
 This note is yours now. Delete it, edit it, or leave it as a running
 scratchpad. Warped Command never overwrites it, and won't bring it back
-if you delete it. To get a fresh copy, use Settings \u2192 Help \u2192 "Show
-onboarding doc again".
+if you delete it. To get a fresh copy, use Settings \u2192 Help \u2192 "Create
+help note".
 `;
 }
 var HelpNoteManager = class {
@@ -1184,8 +1181,7 @@ var DEFAULT_SETTINGS = {
   moveHistory: [],
   // Team file
   teamFilePath: "team.md",
-  resolveTitleLinks: true,
-  helpNoteLastSeenVersion: ""
+  resolveTitleLinks: true
 };
 
 // src/MoveTargetModal.ts
@@ -2463,11 +2459,6 @@ var WarpedTodoPlugin = class extends import_obsidian9.Plugin {
     }
     this.app.workspace.onLayoutReady(async () => {
       await this.teamManager.load();
-      if (!this.settings.helpNoteLastSeenVersion) {
-        this.settings.helpNoteLastSeenVersion = majorMinor(this.manifest.version);
-        await this.saveSettings();
-        void this.helpNoteManager.open();
-      }
     });
     this.registerEditorExtension(createHeaderSortPlugin());
     this.registerEditorExtension(createHeaderChecklistExtension());
@@ -2765,9 +2756,11 @@ var WarpedTodoSettingTab = class extends import_obsidian9.PluginSettingTab {
       }
     }
     containerEl.createEl("h3", { text: "Help" });
-    new import_obsidian9.Setting(containerEl).setName("Onboarding").setDesc("Reopen the first-use help note, with live #todo/#idea examples you can try.").addButton(
-      (btn) => btn.setButtonText("Show onboarding doc again").onClick(async () => {
+    const helpExists = this.app.vault.getAbstractFileByPath(HELP_NOTE_PATH) instanceof import_obsidian9.TFile;
+    new import_obsidian9.Setting(containerEl).setName("Help note").setDesc(`A note of live #todo/#idea examples you can try, at "${HELP_NOTE_PATH}". Created only when you ask.`).addButton(
+      (btn) => btn.setButtonText(helpExists ? "Open help note" : "Create help note").onClick(async () => {
         await this.plugin.helpNoteManager.open();
+        this.display();
       })
     );
     this.widenTextInputs(containerEl);

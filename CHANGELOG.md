@@ -6,7 +6,7 @@ All notable changes to the ␣⌘ Warped Command plugin will be documented in th
 
 Built on the `space-command` branch; see PLAN.md. Filled in phase by phase.
 Branch test builds carry their own 0.x numbers (Phase 1 is 0.56.0,
-Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0; 0.59.1 is a fix).
+Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0; 0.59.1 and 0.59.2 are fixes).
 
 ### Removed
 
@@ -78,6 +78,9 @@ Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0; 0.59
 - The header auto-checklist also triggers on `#ideation` headings, and
   ignores tags in code spans.
 - The help note no longer says completion writes a date.
+- The help note is created only when you ask, from Settings › Help ›
+  Create help note (Open help note once it exists). Nothing is created
+  or opened on install, and the "help note seen" setting is gone.
 
 ### Added
 
