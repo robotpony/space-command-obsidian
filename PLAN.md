@@ -77,7 +77,7 @@ Other tag writes:
 ## Phase 0: Set up
 
 - [x] Create branch `space-command` from `main` after committing this plan (2026-10-19).
-- [ ] Point `install.sh -p` at a test vault only, so the branch build doesn't replace the working `warped-todo` in Bruce's daily vaults until 1.0.0.
+- [x] ~~Point `install.sh -p` at a test vault only~~ — dropped (2026-10-19): Bruce runs the branch build in all his vaults.
 
 ## Phase 1: Decouple the kept helpers from the scanner
 
@@ -137,7 +137,7 @@ Bruce wants the handle list visible in the vault (question 4), so `team.md` stay
 - [x] `AtSuggest` offers `team.md`'s handles first, then handles seen in the vault's tasks this session (gathered in memory from `metadataCache` on first `@`, no scan at load, no writes).
 - [x] Default assignee setting goes (it served the sidebar's assignee filter).
 - [x] `@` date suggestions stay as-is, with the insert-date format setting.
-- [ ] Space Command ignores `team.md`; it gathers handles from the tasks it indexes. The commander records this note as the helper's handle list.
+- [ ] (Future, tabled 2026-10-19) Space Command ignores `team.md` for now; it gathers handles from the tasks it indexes. Space Command may add `team.md` support later, so nothing to record yet.
 
 ## Phase 5: Tag and block helpers (new)
 
