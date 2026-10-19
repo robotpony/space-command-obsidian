@@ -8474,60 +8474,354 @@ var TabLockManager = class {
 // src/HeaderSortExtension.ts
 var import_view = require("@codemirror/view");
 var import_state = require("@codemirror/state");
-var SORT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="m3 17 3 3 3-3"/><path d="M6 18V4"/></svg>`;
-var SortButtonWidget = class extends import_view.WidgetType {
-  constructor(app, processor, scanner, lineNumber, filePath) {
-    super();
-    this.app = app;
-    this.processor = processor;
-    this.scanner = scanner;
-    this.lineNumber = lineNumber;
-    this.filePath = filePath;
+
+// src/blocks.ts
+function headingLevel(line) {
+  const match = line.match(/^(#{1,6})\s+\S/);
+  return match ? match[1].length : 0;
+}
+var FENCE = /^\s*(```|~~~)/;
+function fencedLines(lines) {
+  const fenced = new Array(lines.length).fill(false);
+  let open = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (FENCE.test(lines[i])) {
+      fenced[i] = true;
+      open = !open;
+    } else {
+      fenced[i] = open;
+    }
   }
-  toDOM() {
+  return fenced;
+}
+function blockAtHeading(lines, headingLine, fenced = fencedLines(lines)) {
+  var _a;
+  if (fenced[headingLine])
+    return null;
+  const level = headingLevel((_a = lines[headingLine]) != null ? _a : "");
+  if (!level)
+    return null;
+  let end = headingLine + 1;
+  while (end < lines.length && (fenced[end] || !headingLevel(lines[end])))
+    end++;
+  while (end > headingLine + 1 && lines[end - 1].trim() === "")
+    end--;
+  return { headingLine, level, end };
+}
+function findBlock(lines, line, accept = () => true) {
+  if (line < 0 || line >= lines.length)
+    return null;
+  const fenced = fencedLines(lines);
+  for (let i = line; i >= 0; i--) {
+    if (fenced[i] || !headingLevel(lines[i]))
+      continue;
+    return accept(lines[i]) ? blockAtHeading(lines, i, fenced) : null;
+  }
+  return null;
+}
+var LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s/;
+function listIndent(line) {
+  const match = line.match(LIST_ITEM);
+  return match ? match[1].replace(/\t/g, "    ").length : -1;
+}
+function indentWidth(line) {
+  var _a, _b;
+  return ((_b = (_a = line.match(/^\s*/)) == null ? void 0 : _a[0]) != null ? _b : "").replace(/\t/g, "    ").length;
+}
+function listItemEnd(lines, line) {
+  var _a;
+  const indent = listIndent((_a = lines[line]) != null ? _a : "");
+  if (indent < 0)
+    return line + 1;
+  let end = line + 1;
+  while (end < lines.length && lines[end].trim() !== "" && indentWidth(lines[end]) > indent)
+    end++;
+  return end;
+}
+
+// src/tags.ts
+var TASK_TAGS = ["#todo", "#todos"];
+var DONE_TAGS = ["#todone", "#todones"];
+var IDEA_TAGS = ["#idea", "#ideas", "#ideation"];
+var PRINCIPLE_TAGS = ["#principle"];
+var KIND_TAGS = [...TASK_TAGS, ...DONE_TAGS, ...IDEA_TAGS, ...PRINCIPLE_TAGS];
+function splitCode(line) {
+  return line.split(/(`[^`]*`)/);
+}
+function lineTags(line) {
+  return splitCode(line).filter((_, i) => i % 2 === 0).flatMap((part) => {
+    var _a;
+    return (_a = part.match(/#[\w-]+/g)) != null ? _a : [];
+  }).map((t) => t.toLowerCase());
+}
+function hasAnyTag(line, tags) {
+  return lineTags(line).some((t) => tags.includes(t));
+}
+function ownKind(line) {
+  if (hasAnyTag(line, TASK_TAGS))
+    return "task";
+  if (hasAnyTag(line, IDEA_TAGS))
+    return "idea";
+  if (hasAnyTag(line, PRINCIPLE_TAGS))
+    return "principle";
+  return null;
+}
+function taggedHeadingKind(line) {
+  if (!headingLevel(line) || hasAnyTag(line, DONE_TAGS))
+    return null;
+  return ownKind(line);
+}
+function isTaggedHeading(line) {
+  return taggedHeadingKind(line) !== null;
+}
+function renameTag(line, from, to, dropStamp = false) {
+  const stamp = dropStamp ? String.raw`(?:\s+@\d{4}-\d{2}-\d{2})?` : "";
+  const re = new RegExp(`${from}(?![\\w-])${stamp}`, "i");
+  const parts = splitCode(line);
+  for (let i = 0; i < parts.length; i += 2) {
+    if (re.test(parts[i])) {
+      parts[i] = parts[i].replace(re, to);
+      return parts.join("");
+    }
+  }
+  return line;
+}
+var BOX = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/;
+var BULLET = /^(\s*(?:[-*+]|\d+[.)])\s+)/;
+function boxState(line) {
+  const match = line.match(BOX);
+  return match ? match[2] !== " " : null;
+}
+function isStruck(line) {
+  const body = line.replace(BOX, "").replace(BULLET, "").trim();
+  return /^~~.+~~/.test(body);
+}
+function doneFormOf(line) {
+  if (hasAnyTag(line, ["#todos"]))
+    return ["#todos", "#todones"];
+  if (hasAnyTag(line, ["#todo"]))
+    return ["#todo", "#todone"];
+  return null;
+}
+function openFormOf(line) {
+  if (hasAnyTag(line, ["#todones"]))
+    return ["#todones", "#todos"];
+  if (hasAnyTag(line, ["#todone"]))
+    return ["#todone", "#todo"];
+  return null;
+}
+function syncCheckboxToggle(line, ctx = {}) {
+  const box = boxState(line);
+  if (box === null || isStruck(line))
+    return null;
+  if (hasAnyTag(line, [...IDEA_TAGS, ...PRINCIPLE_TAGS]))
+    return null;
+  if (ctx.headingKind && !hasAnyTag(line, [...TASK_TAGS, ...DONE_TAGS]))
+    return null;
+  const rename = box ? doneFormOf(line) : openFormOf(line);
+  if (!rename)
+    return null;
+  if (box && hasAnyTag(line, DONE_TAGS))
+    return null;
+  if (!box && hasAnyTag(line, TASK_TAGS))
+    return null;
+  return renameTag(line, ...rename, !box);
+}
+function kindTagForDetachedChild(line, heading) {
+  if (hasAnyTag(line, KIND_TAGS))
+    return null;
+  switch (taggedHeadingKind(heading)) {
+    case "task":
+      return boxState(line) === true ? "#todone" : "#todo";
+    case "idea":
+      return "#idea";
+    case "principle":
+      return "#principle";
+    default:
+      return null;
+  }
+}
+function appendTag(line, tag) {
+  return `${line.trimEnd()} ${tag}`;
+}
+function readsAsDone(line) {
+  return isStruck(line) || boxState(line) === true || hasAnyTag(line, DONE_TAGS);
+}
+function priorityRank(line) {
+  const tags = lineTags(line);
+  if (tags.includes("#focus"))
+    return 0;
+  for (let p = 0; p <= 4; p++)
+    if (tags.includes(`#p${p}`))
+      return 1 + p;
+  if (tags.some((t) => t === "#snooze" || t === "#snoozed" || t === "#future"))
+    return 7;
+  return 6;
+}
+
+// src/blockOps.ts
+function taggedBlockAt(lines, line) {
+  return findBlock(lines, line, isTaggedHeading);
+}
+function sortBlock(lines, block) {
+  const from = block.headingLine + 1;
+  const body = lines.slice(from, block.end);
+  const out = [];
+  let i = 0;
+  while (i < body.length) {
+    const indent = listIndent(body[i]);
+    if (indent < 0) {
+      out.push(body[i++]);
+      continue;
+    }
+    const units = [];
+    while (i < body.length && listIndent(body[i]) === indent) {
+      const end = listItemEnd(body, i);
+      units.push(body.slice(i, end));
+      i = end;
+    }
+    const ranked = units.map((unit, index) => ({ unit, index, done: readsAsDone(unit[0]), rank: priorityRank(unit[0]) }));
+    ranked.sort(
+      (a, b) => Number(a.done) - Number(b.done) || (a.done ? 0 : a.rank - b.rank) || a.index - b.index
+    );
+    for (const { unit } of ranked)
+      out.push(...unit);
+  }
+  if (out.every((line, idx) => line === body[idx]))
+    return null;
+  return { from, to: block.end, lines: out };
+}
+function isMovableLine(lines, line) {
+  const text = lines[line];
+  if (text === void 0 || text.trim() === "")
+    return false;
+  if (hasAnyTag(text, KIND_TAGS))
+    return true;
+  if (headingLevel(text))
+    return false;
+  return taggedBlockAt(lines, line) !== null;
+}
+function cutForMove(lines, line) {
+  if (line < 0 || line >= lines.length || lines[line].trim() === "")
+    return null;
+  let from = line;
+  let to;
+  let isBlock = false;
+  let moved;
+  if (headingLevel(lines[line])) {
+    const block = blockAtHeading(lines, line);
+    to = block.end;
+    isBlock = true;
+    moved = lines.slice(from, to);
+  } else {
+    to = listIndent(lines[line]) >= 0 ? listItemEnd(lines, line) : line + 1;
+    moved = lines.slice(from, to);
+    const parent = taggedBlockAt(lines, line);
+    if (parent) {
+      const tag = kindTagForDetachedChild(moved[0], lines[parent.headingLine]);
+      if (tag)
+        moved[0] = appendTag(moved[0], tag);
+    }
+  }
+  const blankBefore = from === 0 || lines[from - 1].trim() === "";
+  const blankAfter = to < lines.length && lines[to].trim() === "";
+  if (blankBefore && blankAfter)
+    to++;
+  return { edit: { from, to, lines: [] }, moved, isBlock };
+}
+function appendMoved(content, moved, isBlock) {
+  const trimmed = content.replace(/\s+$/, "");
+  const text = moved.join("\n");
+  if (!trimmed)
+    return `${text}
+`;
+  return `${trimmed}${isBlock ? "\n\n" : "\n"}${text}
+`;
+}
+function toCharChange(lines, edit) {
+  const offset = (line) => {
+    let pos = 0;
+    for (let i = 0; i < line; i++)
+      pos += lines[i].length + 1;
+    return pos;
+  };
+  const docLength = offset(lines.length) - 1;
+  if (edit.to < lines.length) {
+    return { from: offset(edit.from), to: offset(edit.to), insert: edit.lines.map((l) => `${l}
+`).join("") };
+  }
+  if (edit.lines.length > 0) {
+    return { from: offset(edit.from), to: docLength, insert: edit.lines.join("\n") };
+  }
+  return { from: Math.max(0, offset(edit.from) - 1), to: docLength, insert: "" };
+}
+
+// src/HeaderSortExtension.ts
+var SORT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="m3 17 3 3 3-3"/><path d="M6 18V4"/></svg>`;
+function docLines(doc) {
+  const lines = [];
+  for (let i = 1; i <= doc.lines; i++)
+    lines.push(doc.line(i).text);
+  return lines;
+}
+function sortChange(lines, line) {
+  const block = taggedBlockAt(lines, line);
+  if (!block)
+    return { notice: "Cursor isn't in a tagged heading's block." };
+  const edit = sortBlock(lines, block);
+  if (!edit)
+    return { notice: "Items already sorted." };
+  return { change: toCharChange(lines, edit) };
+}
+var SortButtonWidget = class extends import_view.WidgetType {
+  constructor(lineNumber) {
+    super();
+    this.lineNumber = lineNumber;
+  }
+  toDOM(view) {
     const btn = document.createElement("button");
     btn.className = "todo-sort-btn-editor clickable-icon";
     btn.setAttribute("aria-label", "Sort children");
     btn.innerHTML = SORT_ICON;
-    btn.addEventListener("click", async (e) => {
+    btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const todos = this.scanner.getTodos();
-      const headerTodo = todos.find(
-        (t) => t.filePath === this.filePath && t.lineNumber === this.lineNumber && t.isHeader === true
-      );
-      if (headerTodo) {
-        btn.disabled = true;
-        await this.processor.sortHeaderChildren(headerTodo);
-        btn.disabled = false;
+      const line = view.state.doc.lineAt(view.posAtDOM(btn)).number - 1;
+      const result = sortChange(docLines(view.state.doc), line);
+      if (result.change) {
+        view.dispatch({ changes: result.change });
+        showNotice2("Sorted items.");
+      } else {
+        showNotice2(result.notice);
       }
     });
     return btn;
   }
   eq(other) {
-    return this.lineNumber === other.lineNumber && this.filePath === other.filePath;
+    return this.lineNumber === other.lineNumber;
   }
   ignoreEvent() {
     return false;
   }
 };
-function isHeaderTodoWithChildren(line, lineNumber, scanner, filePath) {
-  if (!/^#{1,6}\s+.*#todos?\b/i.test(line)) {
+function isSortableHeading(lines, lineNumber) {
+  const line = lines[lineNumber];
+  if (!/^#{1,6}\s/.test(line) || !hasAnyTag(line, TASK_TAGS))
     return false;
+  const block = blockAtHeading(lines, lineNumber);
+  if (!block)
+    return false;
+  let children = 0;
+  for (let i = block.headingLine + 1; i < block.end; i++) {
+    if (lines[i].trim() !== "" && ++children >= 2)
+      return true;
   }
-  const todos = scanner.getTodos();
-  const headerTodo = todos.find(
-    (t) => t.filePath === filePath && t.lineNumber === lineNumber && t.isHeader === true
-  );
-  return !!(headerTodo && headerTodo.childLineNumbers && headerTodo.childLineNumbers.length > 0);
+  return false;
 }
-function createHeaderSortPlugin(app, processor, scanner) {
+function createHeaderSortPlugin() {
   return import_view.ViewPlugin.fromClass(
     class {
       constructor(view) {
-        this.app = app;
-        this.processor = processor;
-        this.scanner = scanner;
         this.decorations = this.buildDecorations(view);
       }
       update(update) {
@@ -8537,44 +8831,25 @@ function createHeaderSortPlugin(app, processor, scanner) {
       }
       buildDecorations(view) {
         const builder = new import_state.RangeSetBuilder();
-        const filePath = this.getFilePath(view);
-        if (!filePath) {
-          return builder.finish();
-        }
+        let lines = null;
         for (const { from, to } of view.visibleRanges) {
           let pos = from;
           while (pos < to) {
             const line = view.state.doc.lineAt(pos);
-            const lineText = line.text;
-            const lineNumber = line.number - 1;
-            if (isHeaderTodoWithChildren(
-              lineText,
-              lineNumber,
-              this.scanner,
-              filePath
-            )) {
-              const widget = new SortButtonWidget(
-                this.app,
-                this.processor,
-                this.scanner,
-                lineNumber,
-                filePath
-              );
-              builder.add(
-                line.to,
-                line.to,
-                import_view.Decoration.widget({ widget, side: 1 })
-              );
+            if (/^#{1,6}\s.*#todos?\b/i.test(line.text)) {
+              lines != null ? lines : lines = docLines(view.state.doc);
+              if (isSortableHeading(lines, line.number - 1)) {
+                builder.add(
+                  line.to,
+                  line.to,
+                  import_view.Decoration.widget({ widget: new SortButtonWidget(line.number - 1), side: 1 })
+                );
+              }
             }
             pos = line.to + 1;
           }
         }
         return builder.finish();
-      }
-      getFilePath(view) {
-        var _a;
-        const file = this.app.workspace.getActiveFile();
-        return (_a = file == null ? void 0 : file.path) != null ? _a : null;
       }
     },
     {
@@ -8582,10 +8857,67 @@ function createHeaderSortPlugin(app, processor, scanner) {
     }
   );
 }
+function sortBlockAtCursor(editor) {
+  const lines = editor.getValue().split("\n");
+  const result = sortChange(lines, editor.getCursor().line);
+  if (!result.change) {
+    showNotice2(result.notice);
+    return;
+  }
+  const { from, to, insert } = result.change;
+  editor.replaceRange(insert, editor.offsetToPos(from), editor.offsetToPos(to));
+  showNotice2("Sorted items.");
+}
+
+// src/CheckboxSyncExtension.ts
+var import_state2 = require("@codemirror/state");
+function docLines2(doc) {
+  const lines = [];
+  for (let i = 1; i <= doc.lines; i++)
+    lines.push(doc.line(i).text);
+  return lines;
+}
+function syncEdits(tr) {
+  const edits = [];
+  const seen = /* @__PURE__ */ new Set();
+  let lines = null;
+  tr.changes.iterChanges((fromA, toA, fromB, _toB, inserted) => {
+    var _a;
+    const oldLine = tr.startState.doc.lineAt(fromA);
+    if (toA > oldLine.to || inserted.lines > 1)
+      return;
+    const newLine = tr.newDoc.lineAt(fromB);
+    if (seen.has(newLine.number))
+      return;
+    const before = boxState(oldLine.text);
+    const after = boxState(newLine.text);
+    if (before === null || after === null || before === after)
+      return;
+    seen.add(newLine.number);
+    lines != null ? lines : lines = docLines2(tr.newDoc);
+    const block = findBlock(lines, newLine.number - 1);
+    const headingKind = block && block.headingLine !== newLine.number - 1 ? (_a = taggedHeadingKind(lines[block.headingLine])) != null ? _a : void 0 : void 0;
+    const rewritten = syncCheckboxToggle(newLine.text, { headingKind });
+    if (rewritten !== null && rewritten !== newLine.text) {
+      edits.push({ from: newLine.from, to: newLine.to, insert: rewritten });
+    }
+  });
+  return edits;
+}
+function createCheckboxSyncExtension() {
+  return import_state2.EditorState.transactionFilter.of((tr) => {
+    if (!tr.docChanged)
+      return tr;
+    const edits = syncEdits(tr);
+    if (edits.length === 0)
+      return tr;
+    return [tr, { changes: edits, sequential: true }];
+  });
+}
 
 // src/HeaderChecklistExtension.ts
 var import_view2 = require("@codemirror/view");
-var import_state2 = require("@codemirror/state");
+var import_state3 = require("@codemirror/state");
 function isTaggedHeader(lineText) {
   if (!/^#{1,6}\s+/.test(lineText)) {
     return false;
@@ -8628,7 +8960,7 @@ function handleEnterOnTaggedHeader(view) {
   return true;
 }
 function createHeaderChecklistExtension() {
-  return import_state2.Prec.high(
+  return import_state3.Prec.high(
     import_view2.keymap.of([
       {
         key: "Enter",
@@ -9072,38 +9404,9 @@ var WarpedTodoPlugin = class extends import_obsidian16.Plugin {
         void this.helpNoteManager.open();
       }
     });
-    this.registerEditorExtension(
-      createHeaderSortPlugin(this.app, this.processor, this.scanner)
-    );
+    this.registerEditorExtension(createHeaderSortPlugin());
     this.registerEditorExtension(createHeaderChecklistExtension());
-    this.registerDomEvent(document, "change", async (evt) => {
-      const target = evt.target;
-      if (!target.matches('input[type="checkbox"].task-list-item-checkbox')) {
-        return;
-      }
-      if (!target.checked) {
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      const file = this.app.workspace.getActiveFile();
-      if (!file)
-        return;
-      const content = await this.app.vault.read(file);
-      const lines = content.split("\n");
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (line.includes("#todo") && !line.includes("#todone") && /^-\s*\[x\]/i.test(line.trim())) {
-          const todos = this.scanner.getTodos();
-          const todo = todos.find(
-            (t) => t.file.path === file.path && t.lineNumber === i
-          );
-          if (todo) {
-            await this.processor.completeTodo(todo);
-            break;
-          }
-        }
-      }
-    });
+    this.registerEditorExtension(createCheckboxSyncExtension());
     this.registerView(
       VIEW_TYPE_TODO_SIDEBAR,
       (leaf) => new TodoSidebarView(
@@ -9183,35 +9486,28 @@ var WarpedTodoPlugin = class extends import_obsidian16.Plugin {
     this.addCommand({
       id: "move-todo",
       name: "Move TODO to another file",
-      editorCallback: (editor) => {
-        var _a;
-        const cursor = editor.getCursor();
-        const line = editor.getLine(cursor.line);
-        const tags = extractTags(line);
-        if (!tags.includes("#todo") && !tags.includes("#todos")) {
-          showNotice2("Cursor isn't on a TODO line.");
-          return;
-        }
-        const file = (_a = this.app.workspace.getActiveViewOfType(import_obsidian16.MarkdownView)) == null ? void 0 : _a.file;
+      editorCallback: (editor, view) => {
+        const file = view.file;
         if (!file)
           return;
-        const todos = this.scanner.getTodos();
-        const todo = todos.find(
-          (t) => t.file.path === file.path && t.lineNumber === cursor.line
-        );
-        if (!todo) {
-          showNotice2("Couldn't find a TODO at the cursor.");
+        const line = editor.getCursor().line;
+        const lines = editor.getValue().split("\n");
+        if (!isMovableLine(lines, line)) {
+          showNotice2("Cursor isn't on a TODO, idea, or tagged heading.");
           return;
         }
         new MoveTargetModal(
           this.app,
           this.settings.moveHistory,
           file.path,
-          async (targetFile) => {
-            await this.processor.moveTodo(todo, targetFile.path);
-          }
+          (targetFile) => void this.moveAtCursor(editor, line, targetFile)
         ).open();
       }
+    });
+    this.addCommand({
+      id: "sort-block-at-cursor",
+      name: "Sort block at cursor",
+      editorCallback: (editor) => sortBlockAtCursor(editor)
     });
     this.addCommand({
       id: "send-selection-to-project",
@@ -9481,6 +9777,30 @@ var WarpedTodoPlugin = class extends import_obsidian16.Plugin {
       this.projectSyncStateSaveTimer = null;
       void this.saveSettings();
     }
+  }
+  /**
+   * Cuts the line or block at `line` and appends it to `target`: target
+   * first (so a failed append leaves the source intact), then the cut as one
+   * editor transaction. Nothing is left behind in the source.
+   */
+  async moveAtCursor(editor, line, target) {
+    const lines = editor.getValue().split("\n");
+    const cut = cutForMove(lines, line);
+    if (!cut)
+      return;
+    try {
+      await this.app.vault.process(target, (content) => appendMoved(content, cut.moved, cut.isBlock));
+    } catch (error) {
+      console.error("Error moving TODO:", error);
+      showNotice2("Couldn't move the TODO. See console for details.");
+      return;
+    }
+    const { from, to, insert } = toCharChange(lines, cut.edit);
+    editor.replaceRange(insert, editor.offsetToPos(from), editor.offsetToPos(to));
+    this.settings.moveHistory = [target.path, ...this.settings.moveHistory.filter((p) => p !== target.path)].slice(0, 10);
+    await this.saveSettings();
+    const extra = cut.moved.length - 1;
+    showNotice2(extra > 0 ? `Moved to ${target.basename}, with ${pluralize(extra, "line")} under it.` : `Moved to ${target.basename}.`);
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());

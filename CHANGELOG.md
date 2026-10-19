@@ -2,6 +2,39 @@
 
 All notable changes to the ␣⌘ Warped Command plugin will be documented in this file.
 
+## [1.0.0] - Unreleased
+
+Built on the `space-command` branch; see PLAN.md. Filled in phase by phase.
+Branch test builds carry their own 0.x numbers (Phase 1 is 0.56.0).
+
+### Changed
+
+- Checkbox ↔ tag sync is now a CodeMirror transaction filter, following
+  Space Command's write rules (`src/tags.ts`). The tag change rides on
+  the toggle in one transaction, so a single undo reverts both. Aliases
+  keep their form (`#todos` ↔ `#todones`). No date stamp is written; a
+  legacy `@date` directly after `#todone` is dropped on reopen. A box
+  under a tagged heading toggles only, struck lines are left alone, and
+  idea/principle lines write nothing. Only single-line edits trigger it,
+  so opening a file or an external write never does.
+- Header sort works from the editor alone (no vault scan). It applies as
+  one transaction and orders open before done, then `#focus`,
+  `#p0`–`#p4`, unprioritized and snoozed. It sorts each run of list items
+  on its own, with sub-items kept under their parent. It no longer
+  reverses on a second press.
+- Move TODO to another file cuts the line, with its indented sub-items,
+  or a tagged heading's whole block, and appends it to the chosen file.
+  Nothing is left behind (no `#moved @date`). A child leaving a tagged
+  heading gains the heading's kind tag (`#todo`, `#todone`, `#idea` or
+  `#principle`). It also works on idea and principle lines.
+- Sections follow Space Command's rule: a heading at any level carrying
+  an open kind tag starts one, a done heading doesn't, and the next
+  heading of any level ends it (`src/blocks.ts`).
+
+### Added
+
+- **Sort block at cursor** command, beside the header sort button.
+
 ## [0.55.0] - 2026-10-15
 
 ### Added — Export scan snapshot command

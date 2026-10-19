@@ -6,62 +6,59 @@ import {
   DecorationSet,
   EditorView,
 } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
-import { App } from "obsidian";
-import { TodoProcessor } from "./TodoProcessor";
-import { TodoScanner } from "./TodoScanner";
+import { RangeSetBuilder, Text } from "@codemirror/state";
+import { Editor } from "obsidian";
+import { blockAtHeading } from "./blocks";
+import { sortBlock, taggedBlockAt, toCharChange } from "./blockOps";
+import { hasAnyTag, TASK_TAGS } from "./tags";
+import { showNotice } from "./utils";
 
 // SVG icon for sort button
 const SORT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="m3 17 3 3 3-3"/><path d="M6 18V4"/></svg>`;
 
+function docLines(doc: Text): string[] {
+  const lines: string[] = [];
+  for (let i = 1; i <= doc.lines; i++) lines.push(doc.line(i).text);
+  return lines;
+}
+
+/** Sorts the tagged block at `line` in `lines`; returns the change to apply, or a notice when there's nothing to do. */
+function sortChange(lines: string[], line: number) {
+  const block = taggedBlockAt(lines, line);
+  if (!block) return { notice: "Cursor isn't in a tagged heading's block." };
+  const edit = sortBlock(lines, block);
+  if (!edit) return { notice: "Items already sorted." };
+  return { change: toCharChange(lines, edit) };
+}
+
 /**
- * Widget that renders a sort button inline after header TODO text.
+ * Widget that renders a sort button inline after header TODO text. Sorts
+ * the heading's block in one editor transaction on click; never on change.
  */
 class SortButtonWidget extends WidgetType {
-  private app: App;
-  private processor: TodoProcessor;
-  private scanner: TodoScanner;
-  private lineNumber: number;
-  private filePath: string;
-
-  constructor(
-    app: App,
-    processor: TodoProcessor,
-    scanner: TodoScanner,
-    lineNumber: number,
-    filePath: string
-  ) {
+  constructor(private lineNumber: number) {
     super();
-    this.app = app;
-    this.processor = processor;
-    this.scanner = scanner;
-    this.lineNumber = lineNumber;
-    this.filePath = filePath;
   }
 
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const btn = document.createElement("button");
     btn.className = "todo-sort-btn-editor clickable-icon";
     btn.setAttribute("aria-label", "Sort children");
     btn.innerHTML = SORT_ICON;
 
-    btn.addEventListener("click", async (e) => {
+    btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
 
-      // Find the header TODO item from the scanner
-      const todos = this.scanner.getTodos();
-      const headerTodo = todos.find(
-        (t) =>
-          t.filePath === this.filePath &&
-          t.lineNumber === this.lineNumber &&
-          t.isHeader === true
-      );
-
-      if (headerTodo) {
-        btn.disabled = true;
-        await this.processor.sortHeaderChildren(headerTodo);
-        btn.disabled = false;
+      // Re-read the heading's line from the button's position, in case the
+      // document moved since the widget was drawn.
+      const line = view.state.doc.lineAt(view.posAtDOM(btn)).number - 1;
+      const result = sortChange(docLines(view.state.doc), line);
+      if (result.change) {
+        view.dispatch({ changes: result.change });
+        showNotice("Sorted items.");
+      } else {
+        showNotice(result.notice!);
       }
     });
 
@@ -69,9 +66,7 @@ class SortButtonWidget extends WidgetType {
   }
 
   eq(other: SortButtonWidget): boolean {
-    return (
-      this.lineNumber === other.lineNumber && this.filePath === other.filePath
-    );
+    return this.lineNumber === other.lineNumber;
   }
 
   ignoreEvent(): boolean {
@@ -79,55 +74,28 @@ class SortButtonWidget extends WidgetType {
   }
 }
 
-/**
- * Check if a line is a header TODO with children.
- */
-function isHeaderTodoWithChildren(
-  line: string,
-  lineNumber: number,
-  scanner: TodoScanner,
-  filePath: string
-): boolean {
-  // Quick check: must be a header with #todo or #todos tag
-  if (!/^#{1,6}\s+.*#todos?\b/i.test(line)) {
-    return false;
+/** A `#todo`/`#todos` heading whose block has at least two child lines. */
+function isSortableHeading(lines: string[], lineNumber: number): boolean {
+  const line = lines[lineNumber];
+  if (!/^#{1,6}\s/.test(line) || !hasAnyTag(line, TASK_TAGS)) return false;
+  const block = blockAtHeading(lines, lineNumber);
+  if (!block) return false;
+  let children = 0;
+  for (let i = block.headingLine + 1; i < block.end; i++) {
+    if (lines[i].trim() !== "" && ++children >= 2) return true;
   }
-
-  // Check if it has children in the scanner's cache
-  const todos = scanner.getTodos();
-  const headerTodo = todos.find(
-    (t) =>
-      t.filePath === filePath &&
-      t.lineNumber === lineNumber &&
-      t.isHeader === true
-  );
-
-  return !!(
-    headerTodo &&
-    headerTodo.childLineNumbers &&
-    headerTodo.childLineNumbers.length > 0
-  );
+  return false;
 }
 
 /**
  * Create the ViewPlugin for header sort buttons.
  */
-export function createHeaderSortPlugin(
-  app: App,
-  processor: TodoProcessor,
-  scanner: TodoScanner
-) {
+export function createHeaderSortPlugin() {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
-      private app: App;
-      private processor: TodoProcessor;
-      private scanner: TodoScanner;
 
       constructor(view: EditorView) {
-        this.app = app;
-        this.processor = processor;
-        this.scanner = scanner;
         this.decorations = this.buildDecorations(view);
       }
 
@@ -139,58 +107,46 @@ export function createHeaderSortPlugin(
 
       buildDecorations(view: EditorView): DecorationSet {
         const builder = new RangeSetBuilder<Decoration>();
-        const filePath = this.getFilePath(view);
-
-        if (!filePath) {
-          return builder.finish();
-        }
+        let lines: string[] | null = null;
 
         // Iterate through visible lines
         for (const { from, to } of view.visibleRanges) {
           let pos = from;
           while (pos < to) {
             const line = view.state.doc.lineAt(pos);
-            const lineText = line.text;
-            const lineNumber = line.number - 1; // 0-indexed
-
-            if (
-              isHeaderTodoWithChildren(
-                lineText,
-                lineNumber,
-                this.scanner,
-                filePath
-              )
-            ) {
-              // Add widget at end of line
-              const widget = new SortButtonWidget(
-                this.app,
-                this.processor,
-                this.scanner,
-                lineNumber,
-                filePath
-              );
-              builder.add(
-                line.to,
-                line.to,
-                Decoration.widget({ widget, side: 1 })
-              );
+            // Cheap pre-check before splitting the document.
+            if (/^#{1,6}\s.*#todos?\b/i.test(line.text)) {
+              lines ??= docLines(view.state.doc);
+              if (isSortableHeading(lines, line.number - 1)) {
+                builder.add(
+                  line.to,
+                  line.to,
+                  Decoration.widget({ widget: new SortButtonWidget(line.number - 1), side: 1 })
+                );
+              }
             }
-
             pos = line.to + 1;
           }
         }
 
         return builder.finish();
       }
-
-      getFilePath(view: EditorView): string | null {
-        // Get the file path from the editor state
-        const file = this.app.workspace.getActiveFile();
-        return file?.path ?? null;
-      }
     },
     {
       decorations: (v) => v.decorations,
     }
   );
+}
+
+/** "Sort block at cursor" command: sorts the tagged block containing the cursor, as one undoable edit. */
+export function sortBlockAtCursor(editor: Editor): void {
+  const lines = editor.getValue().split("\n");
+  const result = sortChange(lines, editor.getCursor().line);
+  if (!result.change) {
+    showNotice(result.notice!);
+    return;
+  }
+  const { from, to, insert } = result.change;
+  editor.replaceRange(insert, editor.offsetToPos(from), editor.offsetToPos(to));
+  showNotice("Sorted items.");
 }

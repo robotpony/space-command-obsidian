@@ -2,7 +2,6 @@ import {
   App,
   Editor,
   FileSystemAdapter,
-  MarkdownView,
   Modal,
   Plugin,
   PluginSettingTab,
@@ -34,12 +33,14 @@ import {
 } from "./src/types";
 import { convertToSlackMarkdown } from "./src/SlackConverter";
 import { convertToNotionMarkdown } from "./src/NotionConverter";
-import { extractTags, showNotice, getProjectRepoForFile, formatDate, DATE_FORMAT_PRESETS } from "./src/utils";
+import { pluralize, showNotice, getProjectRepoForFile, formatDate, DATE_FORMAT_PRESETS } from "./src/utils";
 import { MoveTargetModal } from "./src/MoveTargetModal";
 import { SendToProjectModal } from "./src/SendToProjectModal";
 import { appendQueuedTodo } from "./src/ProjectQueue";
 import { TabLockManager } from "./src/TabLockManager";
-import { createHeaderSortPlugin } from "./src/HeaderSortExtension";
+import { createHeaderSortPlugin, sortBlockAtCursor } from "./src/HeaderSortExtension";
+import { createCheckboxSyncExtension } from "./src/CheckboxSyncExtension";
+import { appendMoved, cutForMove, isMovableLine, toCharChange } from "./src/blockOps";
 import { createHeaderChecklistExtension } from "./src/HeaderChecklistExtension";
 import { SidebarManager } from "./src/shared";
 import { readHugoSite, scanPosts } from "./src/HugoScanner";
@@ -188,59 +189,13 @@ export default class WarpedTodoPlugin extends Plugin {
     });
 
     // Register editor extension for header sort buttons
-    this.registerEditorExtension(
-      createHeaderSortPlugin(this.app, this.processor, this.scanner)
-    );
+    this.registerEditorExtension(createHeaderSortPlugin());
 
     // Register editor extension for auto-inserting checklists after tagged headers
     this.registerEditorExtension(createHeaderChecklistExtension());
 
-    // Watch for native checkbox clicks on #todo lines
-    this.registerDomEvent(document, "change", async (evt) => {
-      const target = evt.target as HTMLInputElement;
-
-      // Only handle checkbox changes in the editor
-      if (!target.matches('input[type="checkbox"].task-list-item-checkbox')) {
-        return;
-      }
-
-      // Only process if checkbox was just checked (not unchecked)
-      if (!target.checked) {
-        return;
-      }
-
-      // Give Obsidian time to update the file
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      const file = this.app.workspace.getActiveFile();
-      if (!file) return;
-
-      // Read the updated file content to find any #todo with [x]
-      const content = await this.app.vault.read(file);
-      const lines = content.split("\n");
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-
-        // Find lines with #todo (not #todone) that have completed checkbox
-        if (
-          line.includes("#todo") &&
-          !line.includes("#todone") &&
-          /^-\s*\[x\]/i.test(line.trim())
-        ) {
-          // This is a #todo line with a checked checkbox - process it
-          const todos = this.scanner.getTodos();
-          const todo = todos.find(
-            (t) => t.file.path === file.path && t.lineNumber === i
-          );
-
-          if (todo) {
-            await this.processor.completeTodo(todo);
-            break; // Process one at a time
-          }
-        }
-      }
-    });
+    // Checkbox ↔ #todo/#todone sync, applied in the same transaction as the toggle
+    this.registerEditorExtension(createCheckboxSyncExtension());
 
     // Register sidebar view
     this.registerView(
@@ -335,27 +290,13 @@ export default class WarpedTodoPlugin extends Plugin {
     this.addCommand({
       id: "move-todo",
       name: "Move TODO to another file",
-      editorCallback: (editor) => {
-        const cursor = editor.getCursor();
-        const line = editor.getLine(cursor.line);
-        const tags = extractTags(line);
-
-        if (!tags.includes("#todo") && !tags.includes("#todos")) {
-          showNotice("Cursor isn't on a TODO line.");
-          return;
-        }
-
-        // Find the matching TodoItem from scanner
-        const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+      editorCallback: (editor, view) => {
+        const file = view.file;
         if (!file) return;
-
-        const todos = this.scanner.getTodos();
-        const todo = todos.find(
-          (t) => t.file.path === file.path && t.lineNumber === cursor.line
-        );
-
-        if (!todo) {
-          showNotice("Couldn't find a TODO at the cursor.");
+        const line = editor.getCursor().line;
+        const lines = editor.getValue().split("\n");
+        if (!isMovableLine(lines, line)) {
+          showNotice("Cursor isn't on a TODO, idea, or tagged heading.");
           return;
         }
 
@@ -363,11 +304,15 @@ export default class WarpedTodoPlugin extends Plugin {
           this.app,
           this.settings.moveHistory,
           file.path,
-          async (targetFile) => {
-            await this.processor.moveTodo(todo, targetFile.path);
-          }
+          (targetFile) => void this.moveAtCursor(editor, line, targetFile)
         ).open();
       },
+    });
+
+    this.addCommand({
+      id: "sort-block-at-cursor",
+      name: "Sort block at cursor",
+      editorCallback: (editor) => sortBlockAtCursor(editor),
     });
 
     // Only available from a repo-matched project note with an active
@@ -692,6 +637,34 @@ export default class WarpedTodoPlugin extends Plugin {
       this.projectSyncStateSaveTimer = null;
       void this.saveSettings();
     }
+  }
+
+  /**
+   * Cuts the line or block at `line` and appends it to `target`: target
+   * first (so a failed append leaves the source intact), then the cut as one
+   * editor transaction. Nothing is left behind in the source.
+   */
+  private async moveAtCursor(editor: Editor, line: number, target: TFile): Promise<void> {
+    const lines = editor.getValue().split("\n");
+    const cut = cutForMove(lines, line);
+    if (!cut) return;
+    try {
+      await this.app.vault.process(target, (content) => appendMoved(content, cut.moved, cut.isBlock));
+    } catch (error) {
+      console.error("Error moving TODO:", error);
+      showNotice("Couldn't move the TODO. See console for details.");
+      return;
+    }
+    const { from, to, insert } = toCharChange(lines, cut.edit);
+    editor.replaceRange(insert, editor.offsetToPos(from), editor.offsetToPos(to));
+
+    this.settings.moveHistory = [target.path, ...this.settings.moveHistory.filter((p) => p !== target.path)].slice(0, 10);
+    await this.saveSettings();
+
+    const extra = cut.moved.length - 1;
+    showNotice(extra > 0
+      ? `Moved to ${target.basename}, with ${pluralize(extra, "line")} under it.`
+      : `Moved to ${target.basename}.`);
   }
 
   async loadSettings() {

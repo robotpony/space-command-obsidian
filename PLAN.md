@@ -36,8 +36,8 @@ Bruce's answers (2026-10-19), by question number:
 
 - **Branch `space-command`**, long-lived; `main` keeps the current plugin until the branch merges at 1.0.0.
 - Worked directly in this checkout, no worktree (Bruce, 2026-10-19): only two agents (the planner and the coder) touch the tree, and no humans. Both stay on the branch; hotfixes for `main` wait or go through Bruce.
-- No version bumps per phase on the branch. `CHANGELOG.md` gets one `1.0.0` entry, built up phase by phase (`### Removed`, `### Changed`, `### Added`). Patches to `main` in the meantime keep their own versions and are merged into the branch as they land.
-- Each phase ends with `npm run build` and `npm test` green, and is committed on the branch when Bruce asks (per CLAUDE.md's commit rules).
+- Each phase bumps `package.json`/`manifest.json` from where they stand, by CLAUDE.md's patch/minor rule, never as far as 1.0.0 (Bruce, 2026-10-19), so a test build's number says which phase it carries. Phase 1 is 0.56.0. `CHANGELOG.md` still gets one `1.0.0` entry, built up phase by phase (`### Removed`, `### Changed`, `### Added`). Patches to `main` in the meantime keep their own versions and are merged into the branch as they land.
+- Each phase ends with `npm run build` and `npm test` green, and is committed and pushed on the branch when done, without asking (Bruce, 2026-10-19; see CLAUDE.md's Commit conventions). The branch has no upstream yet, so the first push is `git push -u origin space-command`.
 
 ## Rules for every phase
 
@@ -83,11 +83,11 @@ Other tag writes:
 
 Three kept helpers reach through `TodoScanner`'s index to `TodoProcessor`. Make each work from the editor alone, so Phase 2 can delete both classes.
 
-- [ ] **Checkbox ↔ tag sync** (`main.ts:198`, the document `change` listener). Today it waits 100 ms, re-reads the whole file, finds the first `[x]` + `#todo` line, and calls `processor.completeTodo` through the scanner. Replace it with a CodeMirror extension (alongside `HeaderChecklistExtension`) that reacts to the checkbox toggle on the changed line and applies "Space Command's write rules" as an editor transaction (aliases kept, nothing under a tagged `###` gets a tag, struck lines untouched). Keep the existing uncheck-revert behaviour (`uncheckRevert.test.ts`), minus dates.
-- [ ] **Header sort** (`HeaderSortExtension.ts`). The button looks up the header in `scanner.getTodos()` and calls `processor.sortHeaderChildren`. Move the sort into a pure function over the header's child lines (priority from `#p0`–`#p4`/`#focus`), applied as one editor transaction on click. Add a "Sort block at cursor" command beside the button. Explicit only; no auto-sort.
-- [ ] **Move TODO to another file** (`main.ts:336`). Today it finds the item in the scanner and calls `processor.moveTodo`, which leaves `#moved @date` behind. New behaviour: cut the line (or the `###` block with its children) at the cursor and append it to the chosen file; nothing is left behind. Reuse `MoveTargetModal`. Pull the block-cutting logic out of `HeaderBlockMover.ts` (which today serves only repo-file completion) into a pure helper; drop its git-status gate and repo plumbing.
-- [ ] **Block model**: one pure helper that, given a document and a line, returns the block it belongs to (tagged heading + child lines, stopping at the next heading of the same or higher level). Sort, move, and all the Phase 5 block features use it.
-- [ ] Tests: the checkbox rule (every line shape above), the header sort, the block model and the block cut.
+- [x] **Checkbox ↔ tag sync** (`main.ts:198`, the document `change` listener). Today it waits 100 ms, re-reads the whole file, finds the first `[x]` + `#todo` line, and calls `processor.completeTodo` through the scanner. Replace it with a CodeMirror extension (alongside `HeaderChecklistExtension`) that reacts to the checkbox toggle on the changed line and applies "Space Command's write rules" as an editor transaction (aliases kept, nothing under a tagged `###` gets a tag, struck lines untouched). Keep the existing uncheck-revert behaviour (`uncheckRevert.test.ts`), minus dates.
+- [x] **Header sort** (`HeaderSortExtension.ts`). The button looks up the header in `scanner.getTodos()` and calls `processor.sortHeaderChildren`. Move the sort into a pure function over the header's child lines (priority from `#p0`–`#p4`/`#focus`), applied as one editor transaction on click. Add a "Sort block at cursor" command beside the button. Explicit only; no auto-sort.
+- [x] **Move TODO to another file** (`main.ts:336`). Today it finds the item in the scanner and calls `processor.moveTodo`, which leaves `#moved @date` behind. New behaviour: cut the line (or the `###` block with its children) at the cursor and append it to the chosen file; nothing is left behind. Reuse `MoveTargetModal`. Pull the block-cutting logic out of `HeaderBlockMover.ts` (which today serves only repo-file completion) into a pure helper; drop its git-status gate and repo plumbing.
+- [x] **Block model**: one pure helper that, given a document and a line, returns the block it belongs to (tagged heading + child lines, stopping at the next heading of any level: Space Command's TaggedLinesParser rule, confirmed by the commander 2026-10-19, replacing the earlier "same or higher level"). Sort, move, and all the Phase 5 block features use it.
+- [x] Tests: the checkbox rule (every line shape above), the header sort, the block model and the block cut.
 
 ## Phase 2: Strip
 
