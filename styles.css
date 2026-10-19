@@ -159,6 +159,16 @@ body.theme-light {
   color: var(--sc-faint);
 }
 
+/* Landed line from Space Command: a brief Amber flash that fades */
+.cm-line.space-command-landed {
+  animation: space-command-landed 1.6s ease-out forwards;
+}
+
+@keyframes space-command-landed {
+  from { background-color: color-mix(in srgb, var(--sc-amber) 28%, transparent); }
+  to { background-color: transparent; }
+}
+
 /* Slash Command & Date Suggest Styles */
 .warped-todo-suggestion {
   display: flex;

@@ -15,6 +15,10 @@ export interface WarpedTodoSettings {
   teamFilePath: string;
   /** Resolve `[[Page Title]]` links by frontmatter title when the vault is a Hugo site. See HugoTitleLinks.ts. */
   resolveTitleLinks: boolean;
+  /** "Open in Space Command" in the command palette and editor menu. */
+  showOpenInSpaceCommand: boolean;
+  /** A ribbon icon for "Open in Space Command" (only while the command shows). */
+  showSpaceCommandRibbon: boolean;
 }
 
 export const DEFAULT_SETTINGS: WarpedTodoSettings = {
@@ -26,4 +30,6 @@ export const DEFAULT_SETTINGS: WarpedTodoSettings = {
   // Team file
   teamFilePath: "team.md",
   resolveTitleLinks: true,
+  showOpenInSpaceCommand: true,
+  showSpaceCommandRibbon: false,
 };

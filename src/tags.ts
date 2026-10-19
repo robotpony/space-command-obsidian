@@ -567,3 +567,65 @@ export function priorityRank(line: string): number {
   if (tags.some((t) => tagRole(t) === "snooze")) return 7;
   return 6;
 }
+
+// MARK: - Anchor text
+
+/**
+ * The line's content after its list marker and box, or heading marker
+ * (MarkdownLine.content). Any one-character box state counts, as in
+ * Space Command (`[/]`, `[-]`), when whitespace or the line's end follows.
+ */
+export function lineContent(line: string): string {
+  const heading = line.match(/^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/);
+  if (heading) {
+    let body = (heading[2] ?? "").trim();
+    // An optional closing run of #s (`## Title ##`).
+    const closing = body.match(/^(.*?)(?:^|[ \t]+)#+$/);
+    if (closing) body = closing[1].trim();
+    return body;
+  }
+  const item = line.match(/^[ \t]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]+|$)/);
+  if (!item) return line.trim();
+  let rest = line.slice(item[0].length);
+  const box = rest.match(/^\[.\](?:[ \t]+|$)/u);
+  if (box) rest = rest.slice(box[0].length);
+  return rest;
+}
+
+function removingTags(text: string): string {
+  const tags = findTags(text);
+  for (const tag of tags.reverse()) text = splice(text, tag.from, tag.to, "");
+  return text;
+}
+
+const collapse = (text: string) => text.split(/\s+/).filter(Boolean).join(" ");
+
+/**
+ * Space Command's anchor text (ItemText.normalized): the line's content
+ * with its tags, `@YYYY-MM-DD` stamps, a trailing block ID (`^id`) and
+ * `~~` taken out, whitespace collapsed. Changing an item's state never
+ * changes it, so it finds a line again after it moved.
+ */
+export function normalizedText(line: string): string {
+  let text = removingTags(lineContent(line));
+  text = text.replace(/@\d{4}-\d{2}-\d{2}/g, "");
+  text = text.replace(/\^[A-Za-z0-9-]+\s*$/, "");
+  text = text.split("~~").join("");
+  return collapse(text);
+}
+
+/**
+ * A heading or bold sub-heading as a section label (ItemText.label):
+ * tags, `@mentions` and bold markers removed.
+ */
+export function sectionLabel(text: string): string {
+  let label = removingTags(text);
+  label = label.replace(/@\w[\w.-]*/g, "");
+  label = label.split("**").join("").split("__").join("");
+  return collapse(label);
+}
+
+/** A line that is only bold text, maybe with trailing tags or mentions (`**Tuesday** #weekly`). */
+export function isBoldSubheading(line: string): boolean {
+  return /^(\*\*|__)[^*_]+?\1(\s+[#@][\w./-]+)*$/.test(line.trim());
+}

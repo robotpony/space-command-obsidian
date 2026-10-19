@@ -24,6 +24,7 @@ import { createHeaderChecklistExtension } from "./src/HeaderChecklistExtension";
 import { registerTagCommands } from "./src/TagCommands";
 import { registerTagSuggest } from "./src/TagSuggest";
 import { detectVaultContentPrefix, HugoTitleLinkResolver } from "./src/HugoTitleLinks";
+import { openActiveInSpaceCommand, registerAppSwitch } from "./src/AppSwitch";
 
 export default class WarpedTodoPlugin extends Plugin {
   settings: WarpedTodoSettings;
@@ -31,6 +32,7 @@ export default class WarpedTodoPlugin extends Plugin {
   teamManager: TeamManager;
   helpNoteManager: HelpNoteManager;
   titleLinkResolver: HugoTitleLinkResolver;
+  private spaceCommandRibbon: HTMLElement | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -72,6 +74,10 @@ export default class WarpedTodoPlugin extends Plugin {
 
     // Tag and block commands, also in the editor's right-click menu
     registerTagCommands(this);
+
+    // Open in Space Command, and the obsidian://space-command handler
+    registerAppSwitch(this, () => this.settings);
+    this.updateSpaceCommandRibbon();
 
     // Commands
     this.addCommand({
@@ -160,6 +166,19 @@ export default class WarpedTodoPlugin extends Plugin {
       this.titleLinkResolver.disable();
     } else {
       this.titleLinkResolver.enable(contentPrefix);
+    }
+  }
+
+  /** Shows the ribbon icon when both its setting and the command's are on. */
+  updateSpaceCommandRibbon(): void {
+    const wanted = this.settings.showOpenInSpaceCommand && this.settings.showSpaceCommandRibbon;
+    if (wanted && !this.spaceCommandRibbon) {
+      this.spaceCommandRibbon = this.addRibbonIcon("square-arrow-out-up-right", "Open in Space Command", () =>
+        openActiveInSpaceCommand(this)
+      );
+    } else if (!wanted && this.spaceCommandRibbon) {
+      this.spaceCommandRibbon.remove();
+      this.spaceCommandRibbon = null;
     }
   }
 
@@ -386,6 +405,34 @@ class WarpedTodoSettingTab extends PluginSettingTab {
             await this.plugin.updateTitleLinkResolver();
           })
       );
+
+    // Space Command section
+    containerEl.createEl("h3", { text: "Space Command" });
+
+    new Setting(containerEl)
+      .setName("Show Open in Space Command")
+      .setDesc("A command and editor menu item that opens the note, at the cursor's line, in Space Command. Turn it off if Space Command isn't installed.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.showOpenInSpaceCommand).onChange(async (value) => {
+          this.plugin.settings.showOpenInSpaceCommand = value;
+          await this.plugin.saveSettings();
+          this.plugin.updateSpaceCommandRibbon();
+          this.display();
+        })
+      );
+
+    if (this.plugin.settings.showOpenInSpaceCommand) {
+      new Setting(containerEl)
+        .setName("Ribbon icon")
+        .setDesc("Also show Open in Space Command in the ribbon.")
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.showSpaceCommandRibbon).onChange(async (value) => {
+            this.plugin.settings.showSpaceCommandRibbon = value;
+            await this.plugin.saveSettings();
+            this.plugin.updateSpaceCommandRibbon();
+          })
+        );
+    }
 
     // Team section
     containerEl.createEl("h3", { text: "Team" });

@@ -6,7 +6,7 @@ All notable changes to the ␣⌘ Warped Command plugin will be documented in th
 
 Built on the `space-command` branch; see PLAN.md. Filled in phase by phase.
 Branch test builds carry their own 0.x numbers (Phase 1 is 0.56.0,
-Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0; 0.59.1 and 0.59.2 are fixes).
+Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0, Phase 6 is 0.60.0; 0.59.1 and 0.59.2 are fixes).
 
 ### Removed
 
@@ -125,6 +125,17 @@ Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0; 0.59
   Reading view: `#p0` Terracotta, `#p1` Clay, `#p2` Amber, `#p3` Dim,
   `#p4` Faint, ideas Sage, snooze on a dashed chip, other tags Dim, and
   tags on checked lines Faint.
+- **Open in Space Command**: a command and editor menu item (and an
+  optional ribbon icon) that open `spacecommand://reveal` for the note,
+  with the cursor's line, its item text and its section heading. A
+  setting hides it when Space Command isn't installed.
+- **Open at a line from Space Command**: `obsidian://space-command` with
+  `vault`, `path` (vault-relative or absolute), a 1-based `line`, and
+  optionally `text` and `heading`. It opens the note (reusing a tab that
+  shows it), lands on the item and flashes the line. When the item has
+  moved, it finds the line whose text matches nearest the given line,
+  the heading breaking ties, normalising text the way Space Command's
+  anchors do (no list marker, box, tags, date stamps or `~~`).
 
 ## [0.55.0] - 2026-10-15
 
