@@ -6,7 +6,7 @@ All notable changes to the ␣⌘ Warped Command plugin will be documented in th
 
 Built on the `space-command` branch; see PLAN.md. Filled in phase by phase.
 Branch test builds carry their own 0.x numbers (Phase 1 is 0.56.0,
-Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0).
+Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0).
 
 ### Removed
 
@@ -87,6 +87,38 @@ Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0).
   after the team note's own, gathered on the first `@` of the session.
   Mentions follow Space Command's rule: an `@` at line start, after a
   space or after `(`, so emails and `@2026-10-17` aren't handles.
+- **Tag commands**, in the command palette and the editor's right-click
+  menu, each following Space Command's write rules: Mark done / reopen
+  (Let Go for ideas and principles), Toggle focus, Toggle snooze, Set
+  priority P0–P4 (a Priority submenu in the right-click menu), Remove
+  priority, Convert to tasks, Make task from idea, and Tidy tags. They
+  act on the cursor's line, on every item in a selection, or on a
+  tagged heading's children when the cursor is on the heading (except
+  Mark done, which refuses there and points at Complete all under
+  heading). Each run
+  is one edit, so one undo. A toggle over several lines goes one way
+  for all: on when any line is off.
+- **Tidy tags** reorders the trailing run of tags and `@handle`s (kind,
+  priority, focus/snooze, project tags, handles) and drops repeats.
+  Tags inside the sentence or in code spans stay put; nothing is renamed.
+- **Convert to tasks** takes a line or a selected list: `- [ ] … #todo`,
+  or plain `- [ ]` under a tagged heading. Lines that are already items
+  are left alone.
+- **Complete all under heading** completes each open task under the
+  tagged heading at the cursor, in one edit. The heading line, ideas,
+  principles and done items are left alone.
+- **Tag suggest on `#`**: Space Command's tags first, each with a hint
+  ("priority", "snooze", "focus"), then the vault's other tags by use.
+  It takes over from Obsidian's own tag suggest.
+- **Progress on headings**: a read-only "3/7" beside a tagged heading in
+  Live Preview, counting its task items the way Space Command does
+  (ideas and snoozed items left out; checked, `#todone` or struck is
+  done). Items under a heading follow Space Command's rule: checkbox
+  items at any depth, plain bullets at the outer level only.
+- **Tag colours** from Space Command's palette in Live Preview and
+  Reading view: `#p0` Terracotta, `#p1` Clay, `#p2` Amber, `#p3` Dim,
+  `#p4` Faint, ideas Sage, snooze on a dashed chip, other tags Dim, and
+  tags on checked lines Faint.
 
 ## [0.55.0] - 2026-10-15
 

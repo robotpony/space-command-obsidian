@@ -75,6 +75,90 @@
   vertical-align: middle !important;
 }
 
+/* Tag colours: Space Command's TagChip.colours (App/Sources/ItemRow.swift),
+   values from its Palette, so the app, its help pages and Obsidian agree.
+   Set through Obsidian's own tag variables, so the theme's chip shape stays. */
+body.theme-dark {
+  --sc-terracotta: #ff645a;
+  --sc-clay: #d0633d;
+  --sc-amber: #f5ae2e;
+  --sc-dim: #a8927c;
+  --sc-faint: #6f6255;
+  --sc-sage: #1398b9;
+  --sc-overlay: #3c3731;
+}
+
+body.theme-light {
+  --sc-terracotta: #d63a31;
+  --sc-clay: #b04e2b;
+  --sc-amber: #b57609;
+  --sc-dim: #7a6b5c;
+  --sc-faint: #b3a594;
+  --sc-sage: #0d7895;
+  --sc-overlay: #ebe3d8;
+}
+
+/* Other tags: Dim on Overlay */
+.cm-hashtag,
+.tag {
+  --sc-ink: var(--sc-dim);
+  --tag-color: var(--sc-ink);
+  --tag-color-hover: var(--sc-ink);
+  --tag-background: var(--sc-tint, var(--sc-overlay));
+  --tag-background-hover: var(--sc-tint, var(--sc-overlay));
+  --tag-border-width: 0;
+}
+
+/* Priorities and ideas: ink on a 14% tint */
+.cm-hashtag.cm-tag-p0, .tag[href="#p0"] { --sc-ink: var(--sc-terracotta); }
+.cm-hashtag.cm-tag-p1, .tag[href="#p1"] { --sc-ink: var(--sc-clay); }
+.cm-hashtag.cm-tag-p2, .tag[href="#p2"] { --sc-ink: var(--sc-amber); }
+.cm-hashtag.cm-tag-p3, .tag[href="#p3"] { --sc-ink: var(--sc-dim); }
+.cm-hashtag.cm-tag-p4, .tag[href="#p4"] { --sc-ink: var(--sc-faint); }
+.cm-hashtag.cm-tag-idea, .tag[href="#idea"],
+.cm-hashtag.cm-tag-ideas, .tag[href="#ideas"],
+.cm-hashtag.cm-tag-ideation, .tag[href="#ideation"] { --sc-ink: var(--sc-sage); }
+
+.cm-hashtag:is(.cm-tag-p0, .cm-tag-p1, .cm-tag-p2, .cm-tag-p3, .cm-tag-p4, .cm-tag-idea, .cm-tag-ideas, .cm-tag-ideation),
+.tag:is([href="#p0"], [href="#p1"], [href="#p2"], [href="#p3"], [href="#p4"], [href="#idea"], [href="#ideas"], [href="#ideation"]) {
+  --sc-tint: color-mix(in srgb, var(--sc-ink) 14%, transparent);
+}
+
+/* Snooze: Dim on a dashed Faint chip, no fill */
+.cm-hashtag:is(.cm-tag-snooze, .cm-tag-snoozed, .cm-tag-future),
+.tag:is([href="#snooze"], [href="#snoozed"], [href="#future"]) {
+  --sc-tint: transparent;
+  --tag-border-width: 1px;
+  --tag-border-color: var(--sc-faint);
+  --tag-border-color-hover: var(--sc-faint);
+  border-style: dashed !important;
+}
+
+/* Done lines: Faint on Overlay */
+.HyperMD-task-line[data-task="x"] .cm-hashtag,
+.HyperMD-task-line[data-task="X"] .cm-hashtag,
+.task-list-item.is-checked .tag {
+  --sc-ink: var(--sc-faint);
+  --sc-tint: var(--sc-overlay);
+}
+
+/* Heading progress ("3/7"), beside the sort button */
+.warped-todo-heading-progress {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--sc-dim);
+  background: var(--sc-overlay);
+  vertical-align: middle;
+}
+
+.warped-todo-heading-progress.is-complete {
+  color: var(--sc-faint);
+}
+
 /* Slash Command & Date Suggest Styles */
 .warped-todo-suggestion {
   display: flex;

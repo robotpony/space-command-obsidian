@@ -9,7 +9,7 @@ import {
 import { RangeSetBuilder, Text } from "@codemirror/state";
 import { Editor } from "obsidian";
 import { blockAtHeading } from "./blocks";
-import { sortBlock, taggedBlockAt, toCharChange } from "./blockOps";
+import { headingProgress, sortBlock, taggedBlockAt, toCharChange } from "./blockOps";
 import { hasAnyTag, TASK_TAGS } from "./tags";
 import { showNotice } from "./utils";
 
@@ -74,6 +74,29 @@ class SortButtonWidget extends WidgetType {
   }
 }
 
+/**
+ * Read-only "3/7" beside a tagged heading: its task children done over
+ * all (blockOps.headingProgress). Never writes.
+ */
+class ProgressWidget extends WidgetType {
+  constructor(private done: number, private total: number) {
+    super();
+  }
+
+  toDOM(): HTMLElement {
+    const el = document.createElement("span");
+    el.className = "warped-todo-heading-progress";
+    if (this.done === this.total) el.classList.add("is-complete");
+    el.textContent = `${this.done}/${this.total}`;
+    el.setAttribute("aria-label", `${this.done} of ${this.total} done`);
+    return el;
+  }
+
+  eq(other: ProgressWidget): boolean {
+    return this.done === other.done && this.total === other.total;
+  }
+}
+
 /** A `#todo`/`#todos` heading whose block has at least two child lines. */
 function isSortableHeading(lines: string[], lineNumber: number): boolean {
   const line = lines[lineNumber];
@@ -115,8 +138,16 @@ export function createHeaderSortPlugin() {
           while (pos < to) {
             const line = view.state.doc.lineAt(pos);
             // Cheap pre-check before splitting the document.
-            if (/^#{1,6}\s.*#todos?\b/i.test(line.text)) {
+            if (/^#{1,6}\s.*#(?:todos?|ideas?|ideation|principles?)\b/i.test(line.text)) {
               lines ??= docLines(view.state.doc);
+              const progress = headingProgress(lines, line.number - 1);
+              if (progress) {
+                builder.add(
+                  line.to,
+                  line.to,
+                  Decoration.widget({ widget: new ProgressWidget(progress.done, progress.total), side: 1 })
+                );
+              }
               if (isSortableHeading(lines, line.number - 1)) {
                 builder.add(
                   line.to,

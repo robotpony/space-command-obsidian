@@ -472,6 +472,64 @@ export function convertLineToTask(line: string, ctx: LineContext = {}): WriteRes
   return { ok: true, line: underTaskHeading ? out : appendTag(out, "#todo") };
 }
 
+// MARK: - Tidy
+
+const TAG_TOKEN = /^#[\p{L}\p{N}_/-]+$/u;
+const HANDLE_TOKEN = /^@\p{L}(?:[\p{L}\p{N}_.-]*[\p{L}\p{N}_])?$/u;
+const DATE_WORDS = new Set(["@today", "@tomorrow", "@yesterday"]);
+
+/** Tidy order: kind, priority, focus/snooze, project tags, handles. */
+function tidyGroup(token: string): number {
+  if (token.startsWith("@")) return 4;
+  switch (tagRole(token)) {
+    case "todo": case "todone": case "idea": case "principle": return 0;
+    case "priority": return 1;
+    case "focus": return 2;
+    case "snooze": return 2;
+    default: return 3;
+  }
+}
+
+/**
+ * Tidy tags: reorders the line's trailing run of tags and `@handle`s into
+ * kind, priority, focus/snooze, project tags, handles (stable within each
+ * group), and drops repeats (case-insensitive, first spelling kept). Tags
+ * inside the sentence or in code spans stay put, and nothing is renamed:
+ * `#todo` and `#todos` are different tags.
+ */
+export function tidyTags(line: string): WriteResult {
+  const start = line.match(CONTENT_START)![0].length;
+  const trailing = line.slice(line.trimEnd().length);
+  const tokens = line.slice(start, line.length - trailing.length).split(/(\s+)/);
+  // tokens alternates word, space, word, ...; walk words from the right.
+  let first = tokens.length;
+  for (let i = tokens.length - 1; i >= 0; i -= 2) {
+    const word = tokens[i];
+    const isTag = TAG_TOKEN.test(word) && !/^#\d+$/.test(word);
+    const isHandle = HANDLE_TOKEN.test(word) && !DATE_WORDS.has(word.toLowerCase());
+    if (!isTag && !isHandle) break;
+    first = i;
+  }
+  const run = tokens.slice(first).filter((_, i) => i % 2 === 0);
+  if (run.length === 0) return { ok: false, reason: "No tags at the end of the line." };
+
+  const seen = new Set<string>();
+  const unique = run.filter((word) => {
+    const key = word.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const ordered = unique
+    .map((word, index) => ({ word, index, group: tidyGroup(word) }))
+    .sort((a, b) => a.group - b.group || a.index - b.index)
+    .map((t) => t.word);
+
+  const head = line.slice(0, start) + tokens.slice(0, first).join("");
+  const out = head + ordered.join(" ") + trailing;
+  return out !== line ? { ok: true, line: out } : { ok: false, reason: "Tags are already tidy." };
+}
+
 // MARK: - Reading
 
 /**

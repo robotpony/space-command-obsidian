@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => WarpedTodoPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 var import_path = require("path");
 
 // src/SlashCommandSuggest.ts
@@ -338,6 +338,9 @@ function tagRole(tag) {
     return "snooze";
   return "category";
 }
+function isVocabularyTag(tag) {
+  return tagRole(tag) !== "category";
+}
 function codeSpanMask(line) {
   const mask = new Array(line.length).fill(false);
   const runLength = (from) => {
@@ -431,22 +434,129 @@ function renameTags(line, renames, dropStamp = false) {
   }
   return line;
 }
+function removeTags(line, tags) {
+  for (const tag of [...tags].sort((a, b) => b.from - a.from)) {
+    let { from, to } = tag;
+    if (from > 0 && line[from - 1] === " ")
+      from--;
+    else if (line[to] === " ")
+      to++;
+    line = splice(line, from, to, "");
+  }
+  return line;
+}
+function tagsWithRole(line, role) {
+  return findTags(line).filter((t) => tagRole(t.name) === role);
+}
 function appendTag(line, tag) {
   const end = line.trimEnd().length;
   return splice(line, end, end, end === 0 ? tag : ` ${tag}`);
 }
 var BOX = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/;
 var BULLET = /^(\s*(?:[-*+]|\d+[.)])\s+)/;
+var CONTENT_START = /^(?:\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?|#{1,6}\s+|\s*)/;
 function boxState(line) {
   const match = line.match(BOX);
   return match ? match[2] !== " " : null;
+}
+function setBox(line, checked) {
+  return line.replace(BOX, `$1[${checked ? "x" : " "}]`);
+}
+function textSpan(line) {
+  const start = line.match(CONTENT_START)[0].length;
+  const tags = findTags(line).filter((t) => t.from >= start);
+  let end = line.length;
+  for (; ; ) {
+    while (end > start && /[ \t]/.test(line[end - 1]))
+      end--;
+    const last = tags[tags.length - 1];
+    if (!last || last.to !== end)
+      break;
+    end = last.from;
+    tags.pop();
+  }
+  return [start, Math.max(start, end)];
 }
 function isStruck(line) {
   const body = line.replace(BOX, "").replace(BULLET, "").trim();
   return /^~~.+~~/.test(body);
 }
+function strikeThrough(line) {
+  const [start, end] = textSpan(line);
+  if (end === start)
+    return null;
+  return splice(splice(line, end, end, "~~"), start, start, "~~");
+}
+function unstrike(line) {
+  const [start, end] = textSpan(line);
+  const text = line.slice(start, end);
+  if (text.length < 4 || !text.startsWith("~~") || !text.endsWith("~~"))
+    return null;
+  return splice(splice(line, end - 2, end, ""), start, start + 2, "");
+}
 var DONE_FORM = { "#todo": "#todone", "#todos": "#todones" };
 var OPEN_FORM = { "#todone": "#todo", "#todones": "#todos" };
+var TASK_FORM_OF_IDEA = { "#idea": "#todo", "#ideas": "#todos", "#ideation": "#todo" };
+function completeTaskLine(line, ctx = {}) {
+  if (isStruck(line))
+    return { ok: false, reason: "That line is already done." };
+  const hasTask = hasAnyTag(line, TASK_TAGS);
+  if (headingLevel(line)) {
+    if (ctx.headingHasChildren) {
+      return { ok: false, reason: "Complete the items under this heading one by one." };
+    }
+    if (!hasTask)
+      return { ok: false, reason: "That heading isn't a task." };
+    return { ok: true, line: renameTags(line, DONE_FORM) };
+  }
+  const box = boxState(line);
+  if (hasAnyTag(line, [...IDEA_TAGS, ...PRINCIPLE_TAGS]) && !hasTask) {
+    return { ok: false, reason: "That line isn't a task." };
+  }
+  if (ctx.headingKind === "task" && !hasTask && !hasAnyTag(line, DONE_TAGS)) {
+    if (box === true)
+      return { ok: false, reason: "That item is already done." };
+    if (box === false)
+      return { ok: true, line: setBox(line, true) };
+    if (BULLET.test(line))
+      return { ok: true, line: line.replace(BULLET, "$1[x] ") };
+    return { ok: false, reason: "That line isn't a task." };
+  }
+  if (!hasTask) {
+    return hasAnyTag(line, DONE_TAGS) ? { ok: false, reason: "That item is already done." } : { ok: false, reason: "That line isn't a task." };
+  }
+  let out = renameTags(line, DONE_FORM);
+  if (box === false)
+    out = setBox(out, true);
+  else if (box === null && BULLET.test(out))
+    out = out.replace(BULLET, "$1[x] ");
+  return { ok: true, line: out };
+}
+function letGoLine(line, ctx = {}) {
+  if (isStruck(line) || boxState(line) === true)
+    return { ok: false, reason: "That line is already done." };
+  if (headingLevel(line) && ctx.headingHasChildren) {
+    return { ok: false, reason: "Complete the items under this heading one by one." };
+  }
+  if (boxState(line) === false)
+    return { ok: true, line: setBox(line, true) };
+  const struck = strikeThrough(line);
+  return struck ? { ok: true, line: struck } : { ok: false, reason: "That line has no text to strike through." };
+}
+function completeLine(line, ctx = {}) {
+  var _a, _b;
+  const kind = (_b = ownKind(line)) != null ? _b : hasAnyTag(line, DONE_TAGS) ? "task" : (_a = ctx.headingKind) != null ? _a : "task";
+  return kind === "task" ? completeTaskLine(line, ctx) : letGoLine(line, ctx);
+}
+function reopenLine(line) {
+  var _a;
+  let out = line;
+  if (boxState(out) === true)
+    out = setBox(out, false);
+  out = renameTags(out, OPEN_FORM, true);
+  out = (_a = unstrike(out)) != null ? _a : out;
+  return out !== line ? { ok: true, line: out } : { ok: false, reason: "That item isn't done." };
+}
 function syncCheckboxToggle(line, ctx = {}) {
   const box = boxState(line);
   if (box === null || isStruck(line))
@@ -460,6 +570,127 @@ function syncCheckboxToggle(line, ctx = {}) {
   if (!box && (hasAnyTag(line, TASK_TAGS) || !hasAnyTag(line, DONE_TAGS)))
     return null;
   return box ? renameTags(line, DONE_FORM) : renameTags(line, OPEN_FORM, true);
+}
+function setPriority(line, priority) {
+  const existing = tagsWithRole(line, "priority");
+  if (priority === null) {
+    if (existing.length === 0)
+      return { ok: false, reason: "It has no priority." };
+    return { ok: true, line: removeTags(line, existing) };
+  }
+  const tag = PRIORITY_TAGS[priority];
+  if (!tag)
+    return { ok: false, reason: `There's no priority ${priority}.` };
+  if (existing.length === 0)
+    return { ok: true, line: appendTag(line, tag) };
+  if (existing.length === 1 && existing[0].name === tag)
+    return { ok: false, reason: `Already ${tag}.` };
+  const [first, ...others] = existing;
+  const trimmed = removeTags(line, others);
+  return { ok: true, line: splice(trimmed, first.from, first.to, tag) };
+}
+function isFocused(line) {
+  return tagsWithRole(line, "focus").length > 0;
+}
+function toggleFocus(line) {
+  const focus = tagsWithRole(line, "focus");
+  return focus.length ? { ok: true, line: removeTags(line, focus) } : { ok: true, line: appendTag(line, FOCUS_TAG) };
+}
+function isSnoozed(line) {
+  return tagsWithRole(line, "snooze").length > 0;
+}
+function snoozeLine(line) {
+  if (isSnoozed(line))
+    return { ok: false, reason: "Already snoozed." };
+  return { ok: true, line: appendTag(line, SNOOZE_TAG) };
+}
+function unsnoozeLine(line, ctx = {}) {
+  const snoozes = tagsWithRole(line, "snooze");
+  if (snoozes.length === 0) {
+    return { ok: false, reason: ctx.headingKind ? "It isn't snoozed on this line." : "It isn't snoozed." };
+  }
+  return { ok: true, line: removeTags(line, snoozes) };
+}
+function toggleSnooze(line, ctx = {}) {
+  return isSnoozed(line) ? unsnoozeLine(line, ctx) : snoozeLine(line);
+}
+function makeTaskFromIdea(line, ctx = {}) {
+  if (hasAnyTag(line, IDEA_TAGS))
+    return { ok: true, line: renameTags(line, TASK_FORM_OF_IDEA) };
+  if (ctx.headingKind === "idea" && !ownKind(line) && !hasAnyTag(line, DONE_TAGS)) {
+    return { ok: true, line: appendTag(line, "#todo") };
+  }
+  return { ok: false, reason: "It isn't an idea." };
+}
+function convertLineToTask(line, ctx = {}) {
+  if (headingLevel(line))
+    return { ok: false, reason: "That's a heading." };
+  if (line.trim() === "")
+    return { ok: false, reason: "That line is empty." };
+  if (hasAnyTag(line, KIND_TAGS))
+    return { ok: false, reason: "That line is already an item." };
+  const underTaskHeading = ctx.headingKind === "task";
+  if (underTaskHeading && boxState(line) !== null)
+    return { ok: false, reason: "That line is already a task." };
+  let out;
+  if (boxState(line) !== null)
+    out = line;
+  else if (BULLET.test(line))
+    out = line.replace(BULLET, "$1[ ] ");
+  else
+    out = line.replace(/^(\s*)/, "$1- [ ] ");
+  return { ok: true, line: underTaskHeading ? out : appendTag(out, "#todo") };
+}
+var TAG_TOKEN = /^#[\p{L}\p{N}_/-]+$/u;
+var HANDLE_TOKEN = /^@\p{L}(?:[\p{L}\p{N}_.-]*[\p{L}\p{N}_])?$/u;
+var DATE_WORDS = /* @__PURE__ */ new Set(["@today", "@tomorrow", "@yesterday"]);
+function tidyGroup(token) {
+  if (token.startsWith("@"))
+    return 4;
+  switch (tagRole(token)) {
+    case "todo":
+    case "todone":
+    case "idea":
+    case "principle":
+      return 0;
+    case "priority":
+      return 1;
+    case "focus":
+      return 2;
+    case "snooze":
+      return 2;
+    default:
+      return 3;
+  }
+}
+function tidyTags(line) {
+  const start = line.match(CONTENT_START)[0].length;
+  const trailing = line.slice(line.trimEnd().length);
+  const tokens = line.slice(start, line.length - trailing.length).split(/(\s+)/);
+  let first = tokens.length;
+  for (let i = tokens.length - 1; i >= 0; i -= 2) {
+    const word = tokens[i];
+    const isTag = TAG_TOKEN.test(word) && !/^#\d+$/.test(word);
+    const isHandle = HANDLE_TOKEN.test(word) && !DATE_WORDS.has(word.toLowerCase());
+    if (!isTag && !isHandle)
+      break;
+    first = i;
+  }
+  const run = tokens.slice(first).filter((_, i) => i % 2 === 0);
+  if (run.length === 0)
+    return { ok: false, reason: "No tags at the end of the line." };
+  const seen = /* @__PURE__ */ new Set();
+  const unique = run.filter((word) => {
+    const key = word.toLowerCase();
+    if (seen.has(key))
+      return false;
+    seen.add(key);
+    return true;
+  });
+  const ordered = unique.map((word, index) => ({ word, index, group: tidyGroup(word) })).sort((a, b) => a.group - b.group || a.index - b.index).map((t) => t.word);
+  const head = line.slice(0, start) + tokens.slice(0, first).join("");
+  const out = head + ordered.join(" ") + trailing;
+  return out !== line ? { ok: true, line: out } : { ok: false, reason: "Tags are already tidy." };
 }
 function kindTagForDetachedChild(line, heading) {
   if (hasAnyTag(line, KIND_TAGS))
@@ -1315,6 +1546,64 @@ var import_state = require("@codemirror/state");
 function taggedBlockAt(lines, line) {
   return findBlock(lines, line, isTaggedHeading);
 }
+function sectionChildren(lines, block) {
+  var _a;
+  const headingKind = taggedHeadingKind(lines[block.headingLine]);
+  if (!headingKind)
+    return [];
+  const children = [];
+  let outer = null;
+  for (let i = block.headingLine + 1; i < block.end; i++) {
+    const indent = listIndent(lines[i]);
+    if (indent < 0)
+      continue;
+    outer != null ? outer : outer = indent;
+    if (boxState(lines[i]) === null && indent > outer)
+      continue;
+    if (!hasContent(lines[i]))
+      continue;
+    const own = (_a = ownKind(lines[i])) != null ? _a : hasAnyTag(lines[i], DONE_TAGS) ? "task" : null;
+    children.push({ line: i, kind: own != null ? own : headingKind });
+  }
+  return children;
+}
+function hasContent(line) {
+  const body = line.replace(/^\s*(?:[-*+]|\d+[.)])\s*(?:\[[ xX]\]\s*)?/, "");
+  const tags = new Set(lineTags(body));
+  return body.split(/\s+/).some((word) => word !== "" && !tags.has(word.toLowerCase()));
+}
+function headingProgress(lines, headingLine) {
+  const block = blockAtHeading(lines, headingLine);
+  if (!block)
+    return null;
+  let done = 0;
+  let total = 0;
+  for (const child of sectionChildren(lines, block)) {
+    if (child.kind !== "task" || isSnoozed(lines[child.line]))
+      continue;
+    total++;
+    if (readsAsDone(lines[child.line]))
+      done++;
+  }
+  return total > 0 ? { done, total } : null;
+}
+function completeAllInBlock(lines, block) {
+  var _a;
+  const headingKind = (_a = taggedHeadingKind(lines[block.headingLine])) != null ? _a : void 0;
+  const from = block.headingLine + 1;
+  const out = lines.slice(from, block.end);
+  let changed = false;
+  for (const child of sectionChildren(lines, block)) {
+    if (child.kind !== "task" || readsAsDone(lines[child.line]))
+      continue;
+    const result = completeTaskLine(lines[child.line], { headingKind });
+    if (!result.ok)
+      continue;
+    out[child.line - from] = result.line;
+    changed = true;
+  }
+  return changed ? { from, to: block.end, lines: out } : null;
+}
 function sortBlock(lines, block) {
   const from = block.headingLine + 1;
   const body = lines.slice(from, block.end);
@@ -1456,6 +1745,25 @@ var SortButtonWidget = class extends import_view.WidgetType {
     return false;
   }
 };
+var ProgressWidget = class extends import_view.WidgetType {
+  constructor(done, total) {
+    super();
+    this.done = done;
+    this.total = total;
+  }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "warped-todo-heading-progress";
+    if (this.done === this.total)
+      el.classList.add("is-complete");
+    el.textContent = `${this.done}/${this.total}`;
+    el.setAttribute("aria-label", `${this.done} of ${this.total} done`);
+    return el;
+  }
+  eq(other) {
+    return this.done === other.done && this.total === other.total;
+  }
+};
 function isSortableHeading(lines, lineNumber) {
   const line = lines[lineNumber];
   if (!/^#{1,6}\s/.test(line) || !hasAnyTag(line, TASK_TAGS))
@@ -1488,8 +1796,16 @@ function createHeaderSortPlugin() {
           let pos = from;
           while (pos < to) {
             const line = view.state.doc.lineAt(pos);
-            if (/^#{1,6}\s.*#todos?\b/i.test(line.text)) {
+            if (/^#{1,6}\s.*#(?:todos?|ideas?|ideation|principles?)\b/i.test(line.text)) {
               lines != null ? lines : lines = docLines(view.state.doc);
+              const progress = headingProgress(lines, line.number - 1);
+              if (progress) {
+                builder.add(
+                  line.to,
+                  line.to,
+                  import_view.Decoration.widget({ widget: new ProgressWidget(progress.done, progress.total), side: 1 })
+                );
+              }
               if (isSortableHeading(lines, line.number - 1)) {
                 builder.add(
                   line.to,
@@ -1618,6 +1934,273 @@ function createHeaderChecklistExtension() {
       }
     ])
   );
+}
+
+// src/lineOps.ts
+function lineContext(lines, line) {
+  var _a;
+  const block = findBlock(lines, line);
+  if (!block)
+    return {};
+  if (block.headingLine === line) {
+    return { headingHasChildren: sectionChildren(lines, block).length > 0 };
+  }
+  return { headingKind: (_a = taggedHeadingKind(lines[block.headingLine])) != null ? _a : void 0 };
+}
+function isItemLine(lines, line) {
+  if (headingLevel(lines[line]))
+    return false;
+  if (hasAnyTag(lines[line], [...KIND_TAGS, ...DONE_TAGS]))
+    return true;
+  const block = findBlock(lines, line);
+  return !!block && sectionChildren(lines, block).some((c) => c.line === line);
+}
+function targetLines(lines, sel, anyLine = false) {
+  let last = sel.toLine;
+  if (last > sel.fromLine && sel.toCh === 0)
+    last--;
+  const fenced = fencedLines(lines);
+  if (last > sel.fromLine) {
+    const out = [];
+    for (let i = sel.fromLine; i <= last; i++) {
+      if (fenced[i] || lines[i].trim() === "" || headingLevel(lines[i]))
+        continue;
+      if (anyLine || isItemLine(lines, i))
+        out.push(i);
+    }
+    return out;
+  }
+  const line = sel.fromLine;
+  const block = blockAtHeading(lines, line);
+  if (block && taggedHeadingKind(lines[line])) {
+    const children = sectionChildren(lines, block);
+    if (children.length > 0)
+      return children.map((c) => c.line);
+  }
+  return [line];
+}
+function applyOp(lines, targets, op2) {
+  const changes = [];
+  let reason;
+  for (const line of targets) {
+    const result = op2(lines[line], lineContext(lines, line));
+    if (result.ok) {
+      if (result.line !== lines[line])
+        changes.push({ line, text: result.line });
+    } else {
+      reason != null ? reason : reason = result.reason;
+    }
+  }
+  return changes.length > 0 ? { changes } : { changes, reason: reason != null ? reason : "Nothing to change." };
+}
+function applyToggle(lines, targets, isOn, on, off) {
+  const anyOff = targets.some((t) => !isOn(lines[t], lineContext(lines, t)));
+  const pending = anyOff ? targets.filter((t) => !isOn(lines[t], lineContext(lines, t))) : targets;
+  return applyOp(lines, pending, anyOff ? on : off);
+}
+function toggleDone(lines, targets) {
+  return applyToggle(lines, targets, (line) => readsAsDone(line), completeLine, (line) => reopenLine(line));
+}
+
+// src/TagCommands.ts
+var op = (fn) => (lines, targets) => applyOp(lines, targets, fn);
+var ACTIONS = [
+  {
+    id: "toggle-done",
+    name: "Mark done / reopen",
+    icon: "check-square",
+    run: toggleDone,
+    // Never a whole block from its heading; ideas under it would be let go too.
+    refuseOnHeading: "Complete the items under this heading one by one, or run Complete all under heading."
+  },
+  {
+    id: "toggle-focus",
+    name: "Toggle focus",
+    icon: "target",
+    run: (lines, targets) => applyToggle(lines, targets, isFocused, toggleFocus, toggleFocus)
+  },
+  {
+    id: "toggle-snooze",
+    name: "Toggle snooze",
+    icon: "alarm-clock-off",
+    run: (lines, targets) => applyToggle(lines, targets, isSnoozed, toggleSnooze, toggleSnooze)
+  },
+  ...PRIORITY_TAGS.map((tag, p) => ({
+    id: `set-priority-${p}`,
+    name: `Set priority: P${p}`,
+    icon: "signal",
+    priority: true,
+    run: op((line) => setPriority(line, p))
+  })),
+  { id: "remove-priority", name: "Remove priority", icon: "signal-zero", priority: true, run: op((line) => setPriority(line, null)) },
+  { id: "convert-to-task", name: "Convert to tasks", icon: "list-checks", run: op(convertLineToTask), anyLine: true },
+  { id: "make-task-from-idea", name: "Make task from idea", icon: "lightbulb", run: op(makeTaskFromIdea) },
+  { id: "tidy-tags", name: "Tidy tags", icon: "sparkles", run: op((line) => tidyTags(line)) }
+];
+function editorLines(editor) {
+  return editor.getValue().split("\n");
+}
+function runAction(editor, action) {
+  var _a;
+  const lines = editorLines(editor);
+  const from = editor.getCursor("from");
+  const to = editor.getCursor("to");
+  const targets = targetLines(lines, { fromLine: from.line, toLine: to.line, toCh: to.ch }, action.anyLine);
+  if (action.refuseOnHeading && from.line === to.line && !targets.includes(from.line)) {
+    showNotice2(action.refuseOnHeading);
+    return;
+  }
+  const result = action.run(lines, targets);
+  if (result.changes.length === 0) {
+    showNotice2((_a = result.reason) != null ? _a : "Nothing to change.");
+    return;
+  }
+  editor.transaction({
+    changes: result.changes.map(({ line, text }) => ({
+      from: { line, ch: 0 },
+      to: { line, ch: lines[line].length },
+      text
+    }))
+  });
+}
+function completeAllUnderHeading(editor) {
+  const lines = editorLines(editor);
+  const block = taggedBlockAt(lines, editor.getCursor().line);
+  if (!block) {
+    showNotice2("Cursor isn't in a tagged heading's block.");
+    return;
+  }
+  const edit = completeAllInBlock(lines, block);
+  if (!edit) {
+    showNotice2("No open tasks under this heading.");
+    return;
+  }
+  const { from, to, insert } = toCharChange(lines, edit);
+  editor.transaction({ changes: [{ from: editor.offsetToPos(from), to: editor.offsetToPos(to), text: insert }] });
+}
+function registerTagCommands(plugin) {
+  for (const action of ACTIONS) {
+    plugin.addCommand({
+      id: action.id,
+      name: action.name,
+      editorCallback: (editor) => runAction(editor, action)
+    });
+  }
+  plugin.addCommand({
+    id: "complete-all-under-heading",
+    name: "Complete all under heading",
+    editorCallback: completeAllUnderHeading
+  });
+  plugin.registerEvent(
+    plugin.app.workspace.on("editor-menu", (menu, editor) => {
+      const addAction = (target, action, title = action.name) => target.addItem(
+        (item) => item.setTitle(title).setIcon(action.icon).setSection("space-command").onClick(() => runAction(editor, action))
+      );
+      const priorities = ACTIONS.filter((a) => a.priority);
+      for (const action of ACTIONS) {
+        if (action.priority) {
+          if (action !== priorities[0])
+            continue;
+          let submenu = null;
+          menu.addItem((item) => {
+            item.setTitle("Priority").setIcon("signal").setSection("space-command");
+            const set = item.setSubmenu;
+            submenu = set ? set.call(item) : null;
+          });
+          for (const p of priorities) {
+            if (submenu)
+              addAction(submenu, p, p.name.replace("Set priority: ", ""));
+            else
+              addAction(menu, p);
+          }
+          continue;
+        }
+        addAction(menu, action);
+      }
+      menu.addItem(
+        (item) => item.setTitle("Complete all under heading").setIcon("check-check").setSection("space-command").onClick(() => completeAllUnderHeading(editor))
+      );
+    })
+  );
+}
+
+// src/TagSuggest.ts
+var import_obsidian8 = require("obsidian");
+var VOCABULARY = [
+  { tag: "#todo", hint: "task" },
+  { tag: "#todone", hint: "done" },
+  { tag: "#idea", hint: "idea" },
+  { tag: "#principle", hint: "principle" },
+  { tag: "#focus", hint: "focus" },
+  { tag: "#p0", hint: "priority" },
+  { tag: "#p1", hint: "priority" },
+  { tag: "#p2", hint: "priority" },
+  { tag: "#p3", hint: "priority" },
+  { tag: "#p4", hint: "priority" },
+  { tag: "#snooze", hint: "snooze" },
+  { tag: "#todos", hint: "tasks", alias: true },
+  { tag: "#todones", hint: "done", alias: true },
+  { tag: "#ideas", hint: "ideas", alias: true },
+  { tag: "#ideation", hint: "idea", alias: true },
+  { tag: "#principles", hint: "principle", alias: true }
+];
+var TagSuggest = class extends import_obsidian8.EditorSuggest {
+  constructor(app) {
+    super(app);
+    this.limit = 40;
+  }
+  onTrigger(cursor, editor, _file) {
+    const before = editor.getLine(cursor.line).substring(0, cursor.ch);
+    const match = before.match(/(?:^|\s)#([\p{L}\p{N}_/-]*)$/u);
+    if (!match)
+      return null;
+    if (match[1] === "" && before === "#")
+      return null;
+    return {
+      start: { line: cursor.line, ch: cursor.ch - match[1].length - 1 },
+      end: cursor,
+      query: match[1].toLowerCase()
+    };
+  }
+  getSuggestions(context) {
+    var _a, _b, _c;
+    const query = context.query;
+    const matches = (tag) => tag.slice(1).toLowerCase().includes(query);
+    const vocabulary = VOCABULARY.filter((v) => (v.alias ? query.length > 0 : true) && matches(v.tag));
+    const counts = (_c = (_b = (_a = this.app.metadataCache).getTags) == null ? void 0 : _b.call(_a)) != null ? _c : {};
+    const vault = Object.entries(counts).filter(([tag]) => !isVocabularyTag(tag) && matches(tag)).sort((a, b) => {
+      const prefix = Number(b[0].slice(1).toLowerCase().startsWith(query)) - Number(a[0].slice(1).toLowerCase().startsWith(query));
+      return prefix || b[1] - a[1] || a[0].localeCompare(b[0]);
+    }).map(([tag, count]) => ({ tag, hint: String(count) }));
+    return [...vocabulary, ...vault];
+  }
+  renderSuggestion(item, el) {
+    el.addClass("warped-todo-suggestion");
+    const content = el.createEl("div", { cls: "suggestion-content" });
+    content.createEl("span", { cls: "suggestion-name", text: item.tag });
+    content.createEl("span", { cls: "suggestion-description", text: item.hint });
+  }
+  selectSuggestion(item, _evt) {
+    if (!this.context)
+      return;
+    const { editor, start, end } = this.context;
+    const text = `${item.tag} `;
+    editor.replaceRange(text, start, end);
+    editor.setCursor({ line: start.line, ch: start.ch + text.length });
+  }
+};
+function registerTagSuggest(plugin) {
+  const suggest = new TagSuggest(plugin.app);
+  plugin.registerEditorSuggest(suggest);
+  const manager = plugin.app.workspace.editorSuggest;
+  const list = manager == null ? void 0 : manager.suggests;
+  if (!list)
+    return;
+  const index = list.indexOf(suggest);
+  if (index > 0) {
+    list.splice(index, 1);
+    list.unshift(suggest);
+  }
 }
 
 // src/HugoParser.ts
@@ -1866,7 +2449,7 @@ var HugoTitleLinkResolver = class {
 };
 
 // main.ts
-var WarpedTodoPlugin = class extends import_obsidian8.Plugin {
+var WarpedTodoPlugin = class extends import_obsidian9.Plugin {
   async onload() {
     await this.loadSettings();
     this.teamManager = new TeamManager(this.app, this.settings.teamFilePath);
@@ -1891,6 +2474,8 @@ var WarpedTodoPlugin = class extends import_obsidian8.Plugin {
     this.registerEditorExtension(createCheckboxSyncExtension());
     this.registerEditorSuggest(new SlashCommandSuggest(this.app, this.settings));
     this.registerEditorSuggest(new AtSuggest(this.app, this.settings, this.teamManager));
+    registerTagSuggest(this);
+    registerTagCommands(this);
     this.addCommand({
       id: "quick-add-todo",
       name: "Quick Add TODO",
@@ -1948,7 +2533,7 @@ var WarpedTodoPlugin = class extends import_obsidian8.Plugin {
     this.registerEvent(this.app.vault.on("delete", (file) => this.titleLinkResolver.onFileDeleted(file.path)));
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        if (file instanceof import_obsidian8.TFile)
+        if (file instanceof import_obsidian9.TFile)
           this.titleLinkResolver.onFileRenamed(file, oldPath);
       })
     );
@@ -2025,7 +2610,7 @@ var WarpedTodoPlugin = class extends import_obsidian8.Plugin {
 function chooseVaultPath(vault, kind, title, currentValue) {
   var _a, _b;
   const adapter = vault.adapter;
-  if (!(adapter instanceof import_obsidian8.FileSystemAdapter))
+  if (!(adapter instanceof import_obsidian9.FileSystemAdapter))
     return null;
   const basePath = adapter.getBasePath();
   try {
@@ -2051,7 +2636,7 @@ function chooseVaultPath(vault, kind, title, currentValue) {
     return null;
   }
 }
-var WarpedTodoSettingTab = class extends import_obsidian8.PluginSettingTab {
+var WarpedTodoSettingTab = class extends import_obsidian9.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     // Sticky across display() re-renders: true once the user explicitly picks
@@ -2085,7 +2670,7 @@ var WarpedTodoSettingTab = class extends import_obsidian8.PluginSettingTab {
       (p) => p.format === this.plugin.settings.insertDateFormat
     );
     const showCustomInsertField = this.showCustomInsertDateFormat || !insertFormatIsPreset;
-    new import_obsidian8.Setting(containerEl).setName("Insert date format").setDesc(
+    new import_obsidian9.Setting(containerEl).setName("Insert date format").setDesc(
       `Format @today, @tomorrow, @yesterday, @date, /today, and /tomorrow insert into note text. Today: "${formatDate(/* @__PURE__ */ new Date(), this.plugin.settings.insertDateFormat)}"`
     ).addDropdown((dropdown) => {
       for (const preset of DATE_FORMAT_PRESETS) {
@@ -2106,14 +2691,14 @@ var WarpedTodoSettingTab = class extends import_obsidian8.PluginSettingTab {
       });
     });
     if (showCustomInsertField) {
-      new import_obsidian8.Setting(containerEl).setName("Custom insert date format").setDesc("moment.js format string, e.g. dddd, MMMM Do \u2192 Tuesday, July 10th").addText(
+      new import_obsidian9.Setting(containerEl).setName("Custom insert date format").setDesc("moment.js format string, e.g. dddd, MMMM Do \u2192 Tuesday, July 10th").addText(
         (text) => text.setPlaceholder("dddd, MMMM Do").setValue(this.plugin.settings.insertDateFormat).onChange(async (value) => {
           this.plugin.settings.insertDateFormat = value;
           await this.plugin.saveSettings();
         })
       );
     }
-    new import_obsidian8.Setting(containerEl).setName("Show tab lock buttons").setDesc("Add lock buttons to tab headers. Locked tabs force links to open in new tabs.").addToggle(
+    new import_obsidian9.Setting(containerEl).setName("Show tab lock buttons").setDesc("Add lock buttons to tab headers. Locked tabs force links to open in new tabs.").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.showTabLockButton).onChange(async (value) => {
         this.plugin.settings.showTabLockButton = value;
         if (value) {
@@ -2124,7 +2709,7 @@ var WarpedTodoSettingTab = class extends import_obsidian8.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("Resolve wiki links by page title").setDesc("When the vault is a Hugo site, a [[Page Title]] link that matches no filename resolves to the page whose frontmatter title matches, ignoring case and punctuation (the same rule a Hugo wiki-link render hook uses). Covers clicking, hover preview, link styling, backlinks, and the graph. Files are never changed.").addToggle(
+    new import_obsidian9.Setting(containerEl).setName("Resolve wiki links by page title").setDesc("When the vault is a Hugo site, a [[Page Title]] link that matches no filename resolves to the page whose frontmatter title matches, ignoring case and punctuation (the same rule a Hugo wiki-link render hook uses). Covers clicking, hover preview, link styling, backlinks, and the graph. Files are never changed.").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.resolveTitleLinks).onChange(async (value) => {
         this.plugin.settings.resolveTitleLinks = value;
         await this.plugin.saveSettings();
@@ -2132,7 +2717,7 @@ var WarpedTodoSettingTab = class extends import_obsidian8.PluginSettingTab {
       })
     );
     containerEl.createEl("h3", { text: "Team" });
-    new import_obsidian8.Setting(containerEl).setName("Team file path").setDesc(`Your @handle list, in a vault note. It's written only when you choose "Add @handle to team" or run Update team note.`).addText(
+    new import_obsidian9.Setting(containerEl).setName("Team file path").setDesc(`Your @handle list, in a vault note. It's written only when you choose "Add @handle to team" or run Update team note.`).addText(
       (text) => text.setPlaceholder("team.md").setValue(this.plugin.settings.teamFilePath).onChange(async (value) => {
         this.plugin.settings.teamFilePath = value;
         this.plugin.teamManager.setFilePath(value);
@@ -2151,8 +2736,8 @@ var WarpedTodoSettingTab = class extends import_obsidian8.PluginSettingTab {
       })
     );
     const teamFile = this.app.vault.getAbstractFileByPath(this.plugin.settings.teamFilePath);
-    const teamButtonSetting = new import_obsidian8.Setting(containerEl);
-    if (teamFile instanceof import_obsidian8.TFile) {
+    const teamButtonSetting = new import_obsidian9.Setting(containerEl);
+    if (teamFile instanceof import_obsidian9.TFile) {
       teamButtonSetting.setName("Manage team file").addButton(
         (btn) => btn.setButtonText("Open team file").onClick(async () => {
           await this.app.workspace.getLeaf(false).openFile(teamFile);
@@ -2180,7 +2765,7 @@ var WarpedTodoSettingTab = class extends import_obsidian8.PluginSettingTab {
       }
     }
     containerEl.createEl("h3", { text: "Help" });
-    new import_obsidian8.Setting(containerEl).setName("Onboarding").setDesc("Reopen the first-use help note, with live #todo/#idea examples you can try.").addButton(
+    new import_obsidian9.Setting(containerEl).setName("Onboarding").setDesc("Reopen the first-use help note, with live #todo/#idea examples you can try.").addButton(
       (btn) => btn.setButtonText("Show onboarding doc again").onClick(async () => {
         await this.plugin.helpNoteManager.open();
       })

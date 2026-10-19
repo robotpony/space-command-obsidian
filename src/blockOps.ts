@@ -6,7 +6,23 @@
  */
 
 import { Block, blockAtHeading, findBlock, headingLevel, listIndent, listItemEnd } from "./blocks";
-import { appendTag, hasAnyTag, isTaggedHeading, KIND_TAGS, kindTagForDetachedChild, priorityRank, readsAsDone } from "./tags";
+import {
+  appendTag,
+  boxState,
+  completeTaskLine,
+  DONE_TAGS,
+  hasAnyTag,
+  isSnoozed,
+  isTaggedHeading,
+  ItemKind,
+  KIND_TAGS,
+  kindTagForDetachedChild,
+  lineTags,
+  ownKind,
+  priorityRank,
+  readsAsDone,
+  taggedHeadingKind,
+} from "./tags";
 
 /** A replacement of lines `[from, to)` with `lines`. */
 export interface LineEdit {
@@ -18,6 +34,85 @@ export interface LineEdit {
 /** Tagged-heading block at or around `line`, or null. */
 export function taggedBlockAt(lines: string[], line: number): Block | null {
   return findBlock(lines, line, isTaggedHeading);
+}
+
+/** A child item of a tagged heading's section. */
+export interface SectionChild {
+  /** 0-based line. */
+  line: number;
+  /** Its own kind tag wins over the heading's. */
+  kind: ItemKind;
+}
+
+/**
+ * The items under a tagged heading, by Space Command's rule
+ * (TaggedLinesParser.swift): every checkbox item at any depth, and plain
+ * bullets at the section's outer level (the first list item's indent);
+ * deeper plain bullets are notes on the item above. Lines that are only
+ * markers and tags aren't items. Empty for a heading that doesn't open a
+ * section (untagged, or done).
+ */
+export function sectionChildren(lines: string[], block: Block): SectionChild[] {
+  const headingKind = taggedHeadingKind(lines[block.headingLine]);
+  if (!headingKind) return [];
+  const children: SectionChild[] = [];
+  let outer: number | null = null;
+  for (let i = block.headingLine + 1; i < block.end; i++) {
+    const indent = listIndent(lines[i]);
+    if (indent < 0) continue;
+    outer ??= indent;
+    if (boxState(lines[i]) === null && indent > outer) continue;
+    if (!hasContent(lines[i])) continue;
+    const own = ownKind(lines[i]) ?? (hasAnyTag(lines[i], DONE_TAGS) ? "task" : null);
+    children.push({ line: i, kind: own ?? headingKind });
+  }
+  return children;
+}
+
+/** True when the line has text beyond its list marker, box and tags. */
+function hasContent(line: string): boolean {
+  const body = line.replace(/^\s*(?:[-*+]|\d+[.)])\s*(?:\[[ xX]\]\s*)?/, "");
+  const tags = new Set(lineTags(body));
+  return body.split(/\s+/).some((word) => word !== "" && !tags.has(word.toLowerCase()));
+}
+
+/**
+ * "3/7" for a tagged heading: its task children done over all, as Space
+ * Command counts progress. Ideas and principles aren't progress, and
+ * snoozed items are set aside. Null when it has no task children.
+ */
+export function headingProgress(lines: string[], headingLine: number): { done: number; total: number } | null {
+  const block = blockAtHeading(lines, headingLine);
+  if (!block) return null;
+  let done = 0;
+  let total = 0;
+  for (const child of sectionChildren(lines, block)) {
+    if (child.kind !== "task" || isSnoozed(lines[child.line])) continue;
+    total++;
+    if (readsAsDone(lines[child.line])) done++;
+  }
+  return total > 0 ? { done, total } : null;
+}
+
+/**
+ * "Complete all under heading": each open task child completed by the
+ * per-line rule, as one edit over the block's body. The heading line is
+ * never touched; idea and principle children and done children are left
+ * alone. Null when nothing is open.
+ */
+export function completeAllInBlock(lines: string[], block: Block): LineEdit | null {
+  const headingKind = taggedHeadingKind(lines[block.headingLine]) ?? undefined;
+  const from = block.headingLine + 1;
+  const out = lines.slice(from, block.end);
+  let changed = false;
+  for (const child of sectionChildren(lines, block)) {
+    if (child.kind !== "task" || readsAsDone(lines[child.line])) continue;
+    const result = completeTaskLine(lines[child.line], { headingKind });
+    if (!result.ok) continue;
+    out[child.line - from] = result.line;
+    changed = true;
+  }
+  return changed ? { from, to: block.end, lines: out } : null;
 }
 
 /**

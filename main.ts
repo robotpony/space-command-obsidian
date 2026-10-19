@@ -21,6 +21,8 @@ import { createHeaderSortPlugin, sortBlockAtCursor } from "./src/HeaderSortExten
 import { createCheckboxSyncExtension } from "./src/CheckboxSyncExtension";
 import { appendMoved, cutForMove, isMovableLine, toCharChange } from "./src/blockOps";
 import { createHeaderChecklistExtension } from "./src/HeaderChecklistExtension";
+import { registerTagCommands } from "./src/TagCommands";
+import { registerTagSuggest } from "./src/TagSuggest";
 import { detectVaultContentPrefix, HugoTitleLinkResolver } from "./src/HugoTitleLinks";
 
 export default class WarpedTodoPlugin extends Plugin {
@@ -75,6 +77,10 @@ export default class WarpedTodoPlugin extends Plugin {
     // Register editor suggesters for slash commands and @date/@user
     this.registerEditorSuggest(new SlashCommandSuggest(this.app, this.settings));
     this.registerEditorSuggest(new AtSuggest(this.app, this.settings, this.teamManager));
+    registerTagSuggest(this);
+
+    // Tag and block commands, also in the editor's right-click menu
+    registerTagCommands(this);
 
     // Commands
     this.addCommand({
