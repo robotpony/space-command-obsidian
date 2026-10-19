@@ -1,76 +1,31 @@
 /**
- * Pure, string-in parsing for the Posts tab's Hugo support: a site's own
- * config (just the one key the scanner needs, `contentDir`), a post's
- * frontmatter (`title`/`draft`/`date`), and a minimal archetype-template
- * renderer for "new post."
+ * Pure, string-in parsing for title-based wiki links in a Hugo vault (see
+ * HugoTitleLinks.ts): which config files mark the vault root as a Hugo
+ * site, the one config key needed (`contentDir`), and the link-title
+ * normalization rule.
  *
  * No `fs` here — so `hugoParser.test.ts` can exercise everything directly.
- * The file-reading wrapper lives in `HugoScanner.ts`, matching how
- * `PlanParser.ts`'s pure `parsePlan` pairs with `ProjectMetadata.extractPlanSummary`.
- *
- * There is no YAML/TOML parser dependency in this plugin (see
- * `ProjectMetadata.ts`'s own module comment on reimplementing rather than
- * shelling out) — these are hand-rolled regex extractors, not general
- * parsers. `parsePostFrontmatter` mirrors `ProjectSyncManager.ts`'s
- * `parseFrontmatter` delimiter/line-split approach, typed for this use
- * instead of that one's untyped `Map`.
+ * There is no YAML/TOML parser dependency in this plugin; these are
+ * hand-rolled regex extractors, not general parsers.
  */
 
 export interface ParsedHugoConfig {
   contentDir: string;
 }
 
-export interface ParsedPostFrontmatter {
-  title?: string;
-  draft: boolean;
-  date?: string;
-  /** Frontmatter `description`/`summary`, falling back to the body's opening paragraph. */
-  summary?: string;
-}
-
 const DEFAULT_CONTENT_DIR = "content";
 
-// Matches ProjectMetadata.ts's own SUMMARY_MAX_CHARS — same "roughly 2-3
-// sidebar lines" budget, same reasoning (a hard line count doesn't work
-// since prose wraps unpredictably at sidebar width).
-const SUMMARY_MAX_CHARS = 220;
-
-function unquoteScalar(value: string): string {
-  const match = value.match(/^"(.*)"$/) ?? value.match(/^'(.*)'$/);
-  return match ? match[1] : value;
-}
-
-function truncateSummary(text: string, max: number): string {
-  if (text.length <= max) return text;
-  const cut = text.slice(0, max);
-  const lastSpace = cut.lastIndexOf(" ");
-  return `${cut.slice(0, lastSpace > 0 ? lastSpace : max)}…`;
-}
-
 /**
- * Fallback for a post with no frontmatter `description`/`summary`: its
- * body's opening paragraph (Hugo posts don't put a `# Title` heading at the
- * top of the body the way a README does — the title lives in frontmatter —
- * so this starts collecting from the first non-blank line, unlike
- * ProjectMetadata.extractProjectSummary, which starts after one). Stops at
- * the first blank line or heading; markdown syntax is left as-is since the
- * result is rendered through MarkdownRenderer, not shown as plain text.
+ * Vault-relative config paths that mark the vault root as a Hugo site, in
+ * priority order: modern Hugo (v0.109+) prefers `hugo.*` over the older
+ * `config.*` naming, and hugo.toml before hugo.yaml/yml mirrors what
+ * `hugo new site` scaffolds by default. The newer `config/_default/`
+ * layout is checked only after every root-level name.
  */
-function extractBodyExcerpt(body: string): string | null {
-  const excerptLines: string[] = [];
-  for (const line of body.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      if (excerptLines.length > 0) break;
-      continue;
-    }
-    if (/^#{1,6}\s/.test(trimmed)) break;
-    excerptLines.push(trimmed);
-  }
-  if (excerptLines.length === 0) return null;
-  const text = excerptLines.join(" ").replace(/\s+/g, " ").trim();
-  return text ? truncateSummary(text, SUMMARY_MAX_CHARS) : null;
-}
+export const HUGO_CONFIG_CANDIDATES: readonly string[] = (() => {
+  const names = ["hugo.toml", "hugo.yaml", "hugo.yml", "config.toml", "config.yaml", "config.yml"];
+  return [...names, ...names.map((name) => `config/_default/${name}`)];
+})();
 
 /**
  * Extracts `contentDir` from a Hugo site config file's raw text — TOML
@@ -90,49 +45,23 @@ export function parseHugoConfig(content: string): ParsedHugoConfig {
 }
 
 /**
- * Parses a post's frontmatter block — YAML (`---`/`---`) or TOML
- * (`+++`/`+++`), Hugo supports either. `draft` defaults to `false` when the
- * key is absent (Hugo's own default: no `draft` key means published).
+ * A config's `contentDir` as a vault-relative prefix ("" for the vault
+ * root, no leading `./` or trailing slash), or null when it points outside
+ * the vault (absolute, or climbing out with `..`).
  */
-export function parsePostFrontmatter(content: string): ParsedPostFrontmatter {
-  const yamlMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  const tomlMatch = !yamlMatch ? content.match(/^\+\+\+\r?\n([\s\S]*?)\r?\n\+\+\+\r?\n?/) : null;
-  const block = yamlMatch?.[1] ?? tomlMatch?.[1];
-  const delimiterMatch = yamlMatch ?? tomlMatch;
-  const body = content.slice(delimiterMatch?.[0]?.length ?? 0);
-
-  if (block === undefined) {
-    return { draft: false, summary: extractBodyExcerpt(body) ?? undefined };
+export function vaultContentPrefix(contentDir: string): string | null {
+  if (contentDir.startsWith("/") || /^[A-Za-z]:[\\/]/.test(contentDir)) return null;
+  const parts: string[] = [];
+  for (const part of contentDir.split(/[\\/]+/)) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (parts.length === 0) return null;
+      parts.pop();
+    } else {
+      parts.push(part);
+    }
   }
-
-  const separator = tomlMatch ? "=" : ":";
-  const entries = new Map<string, string>();
-  for (const line of block.split("\n")) {
-    const idx = line.indexOf(separator);
-    if (idx === -1) continue;
-    const key = line.slice(0, idx).trim();
-    if (!key) continue;
-    entries.set(key, unquoteScalar(line.slice(idx + 1).trim()));
-  }
-
-  const frontmatterSummary = entries.get("description") || entries.get("summary");
-
-  return {
-    title: entries.get("title") || undefined,
-    draft: entries.get("draft")?.toLowerCase() === "true",
-    date: entries.get("date") || entries.get("lastmod") || undefined,
-    summary: frontmatterSummary || extractBodyExcerpt(body) || undefined,
-  };
-}
-
-/** Filesystem-safe slug for a new post's filename, derived from its title. */
-export function slugify(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "untitled";
+  return parts.join("/");
 }
 
 /**
@@ -144,32 +73,4 @@ export function slugify(title: string): string {
  */
 export function normalizeLinkTitle(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-export const DEFAULT_ARCHETYPE = `---
-title: "{{ replace .Name "-" " " | title }}"
-date: {{ .Date }}
-draft: true
----
-`;
-
-/**
- * Renders a Hugo archetype template for "new post." Archetypes are Go
- * templates; fully evaluating them is out of scope here. This substitutes
- * the handful of tokens that appear in virtually every Hugo starter's
- * `archetypes/default.md` — `{{ .Date }}`, `{{ .Name }}`,
- * `{{ .TranslationBaseName }}`, and the ubiquitous
- * `{{ replace .Name "-" " " | title }}` idiom (substituted with the real
- * title text, which is more accurate than reconstructing title-case from
- * the slug) — and leaves anything else in the template untouched.
- */
-export function renderArchetype(
-  template: string,
-  vars: { name: string; date: string; title: string }
-): string {
-  return template
-    .replace(/\{\{\s*replace\s+\.Name\s+"-"\s+"\s*"\s*\|\s*title\s*\}\}/g, vars.title)
-    .replace(/\{\{\s*\.Date\s*\}\}/g, vars.date)
-    .replace(/\{\{\s*\.TranslationBaseName\s*\}\}/g, vars.name)
-    .replace(/\{\{\s*\.Name\s*\}\}/g, vars.name);
 }

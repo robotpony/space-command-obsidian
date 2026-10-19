@@ -1,5 +1,5 @@
 import { App, TFile } from "obsidian";
-import { normalizeLinkTitle } from "./HugoParser";
+import { HUGO_CONFIG_CANDIDATES, normalizeLinkTitle, parseHugoConfig, vaultContentPrefix } from "./HugoParser";
 
 /**
  * Title-based wiki links for a Hugo vault.
@@ -22,9 +22,32 @@ import { normalizeLinkTitle } from "./HugoParser";
  * the link graph. Verified against Obsidian 1.14's app.js; these are
  * internal call paths, not public API.
  *
- * Same vault-only scope as the Posts tab: active only when the vault root is
- * itself a Hugo site (see HugoScanner.ts's module comment).
+ * Vault-only: active only when the vault root is itself a Hugo site
+ * (`detectVaultContentPrefix`). It never looks for a site anywhere else.
  */
+
+/** The slice of Obsidian's DataAdapter detection needs: vault-relative reads. */
+export interface VaultReader {
+  exists(path: string): Promise<boolean>;
+  read(path: string): Promise<string>;
+}
+
+/**
+ * The vault-relative content prefix of the Hugo site at the vault root, or
+ * null when the root has no Hugo config, or its `contentDir` points outside
+ * the vault. Reads through the vault adapter, not Node `fs`.
+ */
+export async function detectVaultContentPrefix(vault: VaultReader): Promise<string | null> {
+  for (const path of HUGO_CONFIG_CANDIDATES) {
+    try {
+      if (!(await vault.exists(path))) continue;
+      return vaultContentPrefix(parseHugoConfig(await vault.read(path)).contentDir);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 /** Pure title index, kept free of Obsidian so it's unit-testable. */
 export class TitleLinkIndex {

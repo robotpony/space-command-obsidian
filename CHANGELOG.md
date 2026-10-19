@@ -5,7 +5,33 @@ All notable changes to the ␣⌘ Warped Command plugin will be documented in th
 ## [1.0.0] - Unreleased
 
 Built on the `space-command` branch; see PLAN.md. Filled in phase by phase.
-Branch test builds carry their own 0.x numbers (Phase 1 is 0.56.0).
+Branch test builds carry their own 0.x numbers (Phase 1 is 0.56.0,
+Phase 2 is 0.57.0).
+
+### Removed
+
+- The sidebar and everything in it: the TODOs, Ideas, Projects and Posts
+  tabs, the tag cloud, Focus Mode, Stats and the About modal, the
+  right-click item menu, and the ribbon icon. Commands removed with it:
+  Toggle TODO Sidebar, Refresh TODOs, Toggle Projects Tab.
+- The vault scanner and its background writes. Nothing rewrites a note on
+  change any more: no auto-added `#todone @date`, `#moved` stamps, or
+  `#todo` cleanup, and no file-name project tags. Space Command does the
+  finding and tracking.
+- Projects: the repo scan, project-note sync, PLAN.md summaries, repo-file
+  mutations, and the Send selection to project and Sync Projects
+  commands. All Node `fs`/`child_process` use goes with it.
+- Hugo Posts and New post. Title-based wiki links stay, and now find the
+  vault-root Hugo config through the vault adapter instead of Node `fs`.
+- The Export scan snapshot command.
+- Copy as Slack and Copy as Notion (commands, hotkeys and editor menu
+  items). Slack lives on as Space Command's Clipboard transform.
+- Settings: Show sidebar by default, Make links clickable, Completion date
+  format, Active TODOs limit, Default projects folder, Exclude folders
+  from auto-tagging, Priority tags, every Projects and Posts setting,
+  Focus Mode's queue limit and persistence, and Default assignee. Dropped
+  keys fall out of `data.json` on the next save.
+- About 2,200 lines of sidebar CSS.
 
 ### Changed
 

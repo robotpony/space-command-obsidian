@@ -2,82 +2,36 @@ import {
   App,
   Editor,
   FileSystemAdapter,
-  Modal,
   Plugin,
   PluginSettingTab,
   Setting,
   TFile,
-  TextComponent,
   Vault,
 } from "obsidian";
-import { join, relative, sep } from "path";
-import { existsSync } from "fs";
-import { readFile } from "fs/promises";
-import { TodoScanner } from "./src/TodoScanner";
-import { TodoProcessor } from "./src/TodoProcessor";
-import { ProjectScanner } from "./src/ProjectScanner";
-import { ProjectSyncManager } from "./src/ProjectSyncManager";
+import { join, sep } from "path";
 import { SlashCommandSuggest } from "./src/SlashCommandSuggest";
 import { AtSuggest } from "./src/AtSuggest";
 import { TeamManager } from "./src/TeamManager";
 import { HelpNoteManager, majorMinor } from "./src/HelpNoteManager";
-import {
-  TodoSidebarView,
-  VIEW_TYPE_TODO_SIDEBAR,
-} from "./src/SidebarView";
-import {
-  WarpedTodoSettings,
-  DEFAULT_SETTINGS,
-  TodoItem,
-  PostsSidebarOptions,
-} from "./src/types";
-import { convertToSlackMarkdown } from "./src/SlackConverter";
-import { convertToNotionMarkdown } from "./src/NotionConverter";
-import { pluralize, showNotice, getProjectRepoForFile, formatDate, DATE_FORMAT_PRESETS } from "./src/utils";
+import { WarpedTodoSettings, DEFAULT_SETTINGS } from "./src/types";
+import { pluralize, showNotice, formatDate, DATE_FORMAT_PRESETS } from "./src/utils";
 import { MoveTargetModal } from "./src/MoveTargetModal";
-import { SendToProjectModal } from "./src/SendToProjectModal";
-import { appendQueuedTodo } from "./src/ProjectQueue";
 import { TabLockManager } from "./src/TabLockManager";
 import { createHeaderSortPlugin, sortBlockAtCursor } from "./src/HeaderSortExtension";
 import { createCheckboxSyncExtension } from "./src/CheckboxSyncExtension";
 import { appendMoved, cutForMove, isMovableLine, toCharChange } from "./src/blockOps";
 import { createHeaderChecklistExtension } from "./src/HeaderChecklistExtension";
-import { SidebarManager } from "./src/shared";
-import { readHugoSite, scanPosts } from "./src/HugoScanner";
-import { buildSnapshot, serializeSnapshot, SNAPSHOT_FILE_PATH, SnapshotRepoInput } from "./src/ScanSnapshot";
-import { dedupeByName, STRUCTURED_FILENAMES } from "./src/ProjectSyncManager";
-import { ProjectManager, projectFilePath } from "./src/ProjectManager";
-import { HugoTitleLinkResolver } from "./src/HugoTitleLinks";
-import { guessProjectsFolder, homeRelativePath, PROJECT_SORT_OPTIONS } from "./src/ProjectsSidebarView";
+import { detectVaultContentPrefix, HugoTitleLinkResolver } from "./src/HugoTitleLinks";
 
 export default class WarpedTodoPlugin extends Plugin {
   settings: WarpedTodoSettings;
-  scanner: TodoScanner;
-  processor: TodoProcessor;
-  projectManager: ProjectManager;
-  projectScanner: ProjectScanner;
-  projectSyncManager: ProjectSyncManager;
   tabLockManager: TabLockManager;
   teamManager: TeamManager;
   helpNoteManager: HelpNoteManager;
   titleLinkResolver: HugoTitleLinkResolver;
-  private sidebarManager: SidebarManager;
 
   async onload() {
     await this.loadSettings();
-
-    // If the user has opted out of persisting Focus Mode across sessions, reset
-    // the persisted active flag at startup so the sidebar opens in normal mode.
-    if (!this.settings.focusModePersist && this.settings.focusModeActive) {
-      this.settings.focusModeActive = false;
-      await this.saveSettings();
-    }
-
-    // Initialize sidebar manager. Projects is a tab within this same
-    // sidebar now (TodoSidebarView's 'projects' mode), not a second view —
-    // see ProjectsSidebarView.ts's file-level comment — so there's only
-    // one manager, matching there being only one leaf.
-    this.sidebarManager = new SidebarManager(this.app, VIEW_TYPE_TODO_SIDEBAR);
 
     // Initialize team manager
     this.teamManager = new TeamManager(this.app, this.settings.teamFilePath);
@@ -86,55 +40,6 @@ export default class WarpedTodoPlugin extends Plugin {
     // Initialize help note manager
     this.helpNoteManager = new HelpNoteManager(this.app);
 
-    // Initialize core components
-    this.scanner = new TodoScanner(this.app);
-    this.processor = new TodoProcessor(this.app, this.settings.dateFormat);
-    this.processor.setScanner(this.scanner);
-    this.projectManager = new ProjectManager(
-      this.app,
-      this.scanner,
-      this.settings.defaultProjectsFolder,
-      this.settings.priorityTags,
-      this.settings.excludeFoldersFromProjects
-    );
-    this.projectScanner = new ProjectScanner();
-    // onSynced must apply results directly (applyProjectSyncResult), not go
-    // through SidebarManager.refresh()/view.reload() — reload() itself calls
-    // syncAll(), which would fire onSynced again: an unbounded loop. See
-    // TodoSidebarView.applyProjectSyncResult's doc comment for how this was found.
-    this.projectSyncManager = new ProjectSyncManager(
-      this.app,
-      this.projectScanner,
-      (scanned) =>
-        this.sidebarManager.forEach<TodoSidebarView>((view) => view.applyProjectSyncResult(scanned)),
-      // Per-project sync bookkeeping (repo path + last-synced time) lives in
-      // data.json, not the project note's frontmatter — see ProjectSyncManager
-      // and WarpedTodoSettings.projectSyncState. Saved on a debounce so a scan
-      // touching many projects is one write, not one per project.
-      {
-        get: (name) => this.settings.projectSyncState[name],
-        set: (name, entry) => {
-          this.settings.projectSyncState[name] = entry;
-          this.scheduleProjectSyncStateSave();
-        },
-        prune: (currentNames) => {
-          const keep = new Set(currentNames);
-          let changed = false;
-          for (const name of Object.keys(this.settings.projectSyncState)) {
-            if (!keep.has(name)) {
-              delete this.settings.projectSyncState[name];
-              changed = true;
-            }
-          }
-          if (changed) this.scheduleProjectSyncStateSave();
-        },
-      }
-    );
-    // Desktop-only feature (Node fs/child_process — see manifest.json's isDesktopOnly).
-    // Only starts watching if a base folder is actually configured.
-    if (this.settings.projectsBaseFolder) {
-      this.projectSyncManager.startWatching(this.projectsSyncOptions());
-    }
     // Initialize tab lock manager
     this.tabLockManager = new TabLockManager(this.app);
 
@@ -145,38 +50,8 @@ export default class WarpedTodoPlugin extends Plugin {
       });
     }
 
-    // Set up processor callback to trigger re-scan after completion
-    this.processor.setOnCompleteCallback(() => {
-      // File will be modified, which will trigger scanner's file watcher
-      this.app.workspace.trigger("markdown-changed");
-    });
-
-    // Track move-to targets for the file picker
-    this.processor.setOnMoveHistoryUpdate(async (path: string) => {
-      const history = this.settings.moveHistory.filter(p => p !== path);
-      history.unshift(path);
-      this.settings.moveHistory = history.slice(0, 10);
-      await this.saveData(this.settings);
-    });
-
-    // Set up file watchers immediately so changes during startup are not missed.
-    // The metadataCache.on("changed") watcher (the primary trigger) is safe to
-    // register before the cache is resolved — it simply won't fire until files
-    // are indexed.
-    this.scanner.watchFiles();
-
-    // Defer the initial vault scan until the workspace layout is ready.
-    // onLayoutReady fires after Obsidian's metadata cache has finished its
-    // initial indexing pass, ensuring getFileCache() returns accurate results
-    // for the pre-filter check introduced in phase 3.
     this.app.workspace.onLayoutReady(async () => {
       await this.teamManager.load();
-      await this.scanner.scanVault();
-
-      // Activate the sidebar after the scan so it has data to show on first render.
-      if (this.settings.showSidebarByDefault) {
-        this.sidebarManager.activate();
-      }
 
       // First-use help note: created and revealed on first install only.
       // Later version bumps leave it alone, so a deleted note stays deleted;
@@ -197,62 +72,11 @@ export default class WarpedTodoPlugin extends Plugin {
     // Checkbox ↔ #todo/#todone sync, applied in the same transaction as the toggle
     this.registerEditorExtension(createCheckboxSyncExtension());
 
-    // Register sidebar view
-    this.registerView(
-      VIEW_TYPE_TODO_SIDEBAR,
-      (leaf) =>
-        new TodoSidebarView(
-          leaf,
-          this.scanner,
-          this.processor,
-          this.projectManager,
-          this.projectScanner,
-          this.projectSyncManager,
-          () => this.projectsSyncOptions(),
-          () => {
-            (this.app as any).setting.open();
-            (this.app as any).setting.openTabById(this.manifest.id);
-          },
-          this.settings.priorityTags,
-          this.settings.activeTodosLimit,
-          this.settings.makeLinksClickable,
-          () => this.showAboutModal(),
-          () => this.showStatsModal(),
-          () => this.settings.moveHistory,
-          this.teamManager,
-          this.settings.defaultAssignee,
-          this.settings.focusQueueLimit,
-          this.settings.focusModeActive,
-          async (active: boolean) => {
-            this.settings.focusModeActive = active;
-            await this.saveSettings();
-          },
-          this.settings.defaultProjectsSortKey,
-          () => this.postsOptions()
-        )
-    );
-
-    // Sidebar is activated inside onLayoutReady above (after scanVault completes).
-
     // Register editor suggesters for slash commands and @date/@user
     this.registerEditorSuggest(new SlashCommandSuggest(this.app, this.settings));
     this.registerEditorSuggest(new AtSuggest(this.app, this.settings, this.teamManager));
 
     // Commands
-    this.addCommand({
-      id: "toggle-todo-sidebar",
-      name: "Toggle TODO Sidebar",
-      callback: () => {
-        this.sidebarManager.toggle();
-      },
-      hotkeys: [
-        {
-          modifiers: ["Mod", "Shift"],
-          key: "t",
-        },
-      ],
-    });
-
     this.addCommand({
       id: "quick-add-todo",
       name: "Quick Add TODO",
@@ -276,15 +100,6 @@ export default class WarpedTodoPlugin extends Plugin {
           key: "a",
         },
       ],
-    });
-
-    this.addCommand({
-      id: "refresh-todos",
-      name: "Refresh TODOs",
-      callback: async () => {
-        await this.scanner.scanVault();
-        this.sidebarManager.refresh();
-      },
     });
 
     this.addCommand({
@@ -315,166 +130,6 @@ export default class WarpedTodoPlugin extends Plugin {
       editorCallback: (editor) => sortBlockAtCursor(editor),
     });
 
-    // Only available from a repo-matched project note with an active
-    // selection — checkCallback so it just doesn't appear where it can't do
-    // anything, rather than erroring. The repo path comes from the live
-    // scan / projectSyncState now, not a frontmatter key.
-    this.addCommand({
-      id: "send-selection-to-project",
-      name: "Send selection to project",
-      editorCheckCallback: (checking, editor, ctx) => {
-        const file = ctx.file;
-        const repo = getProjectRepoForFile(
-          file,
-          this.settings.defaultProjectsFolder,
-          (name) => this.projectSyncManager.getRepoPathForProjectName(name)
-        );
-        const selection = editor.getSelection();
-        if (!repo || !selection.trim()) return false;
-        if (checking) return true;
-
-        this.openSendSelectionToProjectModal(file!, repo, editor);
-        return true;
-      },
-    });
-
-    this.addCommand({
-      id: "copy-as-slack",
-      name: "Copy as Slack Markdown",
-      editorCallback: async (editor) => {
-        const selection = editor.getSelection();
-        if (!selection) {
-          showNotice("No text selected.");
-          return;
-        }
-        const slackMd = convertToSlackMarkdown(selection);
-        await navigator.clipboard.writeText(slackMd);
-        showNotice("Copied as Slack Markdown.");
-      },
-      hotkeys: [
-        {
-          modifiers: ["Mod", "Shift"],
-          key: "c",
-        },
-      ],
-    });
-
-    this.addCommand({
-      id: "copy-as-notion",
-      name: "Copy as Notion Markdown",
-      editorCallback: async (editor) => {
-        const selection = editor.getSelection();
-        if (!selection) {
-          showNotice("No text selected.");
-          return;
-        }
-        const notionMd = convertToNotionMarkdown(selection);
-        await navigator.clipboard.writeText(notionMd);
-        showNotice("Copied as Notion Markdown.");
-      },
-      hotkeys: [
-        {
-          modifiers: ["Mod", "Shift"],
-          key: "n",
-        },
-      ],
-    });
-
-    // Editor context menu: Copy as Slack, Copy as Notion, Send to project, and Define
-    this.registerEvent(
-      this.app.workspace.on("editor-menu", (menu, editor, info) => {
-        const selection = editor.getSelection();
-        if (selection) {
-          menu.addItem((item) => {
-            item
-              .setTitle("Copy as Slack")
-              .setIcon("clipboard-copy")
-              .onClick(async () => {
-                const slackMd = convertToSlackMarkdown(selection);
-                await navigator.clipboard.writeText(slackMd);
-                showNotice("Copied as Slack Markdown.");
-              });
-          });
-          menu.addItem((item) => {
-            item
-              .setTitle("Copy as Notion")
-              .setIcon("clipboard-copy")
-              .onClick(async () => {
-                const notionMd = convertToNotionMarkdown(selection);
-                await navigator.clipboard.writeText(notionMd);
-                showNotice("Copied as Notion Markdown.");
-              });
-          });
-
-          // Same repo gate as the "Send selection to project" command —
-          // only offer this in a repo-matched project note.
-          const file = info.file;
-          const repo = getProjectRepoForFile(
-            file,
-            this.settings.defaultProjectsFolder,
-            (name) => this.projectSyncManager.getRepoPathForProjectName(name)
-          );
-          if (repo) {
-            menu.addItem((item) => {
-              item
-                .setTitle("Send selection to project")
-                .setIcon("send")
-                .onClick(() => {
-                  this.openSendSelectionToProjectModal(file!, repo, editor);
-                });
-            });
-          }
-        }
-      })
-    );
-
-    this.addCommand({
-      // id unchanged — renaming it would silently drop anyone's existing hotkey binding.
-      id: "toggle-projects-sidebar",
-      name: "Toggle Projects Tab",
-      callback: () => {
-        this.openProjectsTab();
-      },
-    });
-
-    this.addCommand({
-      id: "sync-projects",
-      name: "Sync Projects",
-      callback: async () => {
-        // Runs independent of whether the sidebar is open — onSynced (wired in
-        // the ProjectSyncManager constructor above) refreshes it automatically
-        // if it happens to be.
-        if (!this.settings.projectsBaseFolder) {
-          showNotice("No Projects base folder configured yet. Set one in settings.");
-          return;
-        }
-        await this.projectSyncManager.syncAll(this.projectsSyncOptions());
-        showNotice("Projects synced.");
-      },
-    });
-
-    this.addCommand({
-      id: "export-scan-snapshot",
-      name: "Export scan snapshot",
-      callback: async () => {
-        try {
-          await this.app.vault.adapter.write(SNAPSHOT_FILE_PATH, await this.buildScanSnapshot());
-          showNotice(`Scan snapshot written to ${SNAPSHOT_FILE_PATH} (vault root).`);
-        } catch (error) {
-          console.error("[Warped Command] Snapshot export failed:", error);
-          showNotice("Scan snapshot export failed. See the console for details.");
-        }
-      },
-    });
-
-    // Add ribbon icon. Projects doesn't get its own — it's a tab within
-    // this same sidebar (see ProjectsSidebarView.ts's file-level comment),
-    // reached via the Projects tab button or the "toggle-projects-sidebar"
-    // command, both of which work whether or not the sidebar is open.
-    this.addRibbonIcon("square-check-big", "Toggle TODO Sidebar", () => {
-      this.sidebarManager.toggle();
-    });
-
     // Title-based wiki links for a Hugo vault — see HugoTitleLinks.ts.
     this.titleLinkResolver = new HugoTitleLinkResolver(this.app);
     this.registerEvent(this.app.metadataCache.on("changed", (file) => this.titleLinkResolver.onFileChanged(file)));
@@ -492,151 +147,24 @@ export default class WarpedTodoPlugin extends Plugin {
 
   /**
    * Turns title-based wiki links on or off per the setting and whether the
-   * vault root is a Hugo site. Same vault-only detection as the Posts tab
-   * (readHugoSite on the vault's own base path, never a Projects scan).
+   * vault root is itself a Hugo site (see HugoTitleLinks.ts).
    */
   async updateTitleLinkResolver(): Promise<void> {
-    const adapter = this.app.vault.adapter;
-    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
-    const site = this.settings.resolveTitleLinks && basePath ? await readHugoSite(basePath) : null;
-    const contentPrefix = site && basePath ? relative(basePath, site.contentDir).split(sep).join("/") : null;
-    if (contentPrefix === null || contentPrefix.startsWith("..")) {
+    const contentPrefix = this.settings.resolveTitleLinks
+      ? await detectVaultContentPrefix(this.app.vault.adapter)
+      : null;
+    if (contentPrefix === null) {
       this.titleLinkResolver.disable();
     } else {
       this.titleLinkResolver.enable(contentPrefix);
     }
   }
 
-  /**
-   * Runs the plugin's real scans and serializes them for "Export scan
-   * snapshot" (see ScanSnapshot.ts). Read-only on the Projects side: it
-   * scans repos and parses their files but doesn't sync project notes.
-   */
-  async buildScanSnapshot(): Promise<string> {
-    await this.scanner.scanVault();
-    const vaultItems = [
-      ...this.scanner.getTodos(),
-      ...this.scanner.getTodones(),
-      ...this.scanner.getIdeas(),
-      ...this.scanner.getPrinciples(),
-    ];
-
-    const repos: SnapshotRepoInput[] = [];
-    const baseFolder = this.settings.projectsBaseFolder;
-    if (baseFolder) {
-      const scanned = dedupeByName(await this.projectScanner.scan({
-        baseFolder,
-        maxDepth: this.settings.projectsScanDepth,
-        excludeDirs: this.settings.projectsExcludeDirs,
-      }));
-      for (const project of scanned) {
-        const items = await this.projectSyncManager.getProjectItems(project.localPath);
-        const structuredFiles: SnapshotRepoInput["structuredFiles"] = [];
-        for (const name of STRUCTURED_FILENAMES) {
-          const path = join(project.localPath, name);
-          if (!existsSync(path)) continue;
-          structuredFiles.push({
-            name,
-            content: await readFile(path, "utf-8"),
-            items: items.filter((item) => item.sourceFile === path),
-          });
-        }
-        repos.push({
-          name: project.name,
-          path: relative(baseFolder, project.localPath).split(sep).join("/"),
-          title: project.title,
-          stack: project.stack,
-          branch: project.branch,
-          remote: project.remote,
-          noteFile: projectFilePath(this.settings.defaultProjectsFolder, project.name),
-          structuredFiles,
-          plan: project.planSummary,
-        });
-      }
-    }
-
-    const adapter = this.app.vault.adapter;
-    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
-    const site = basePath ? await readHugoSite(basePath) : null;
-    const toVaultPath = (abs: string) => relative(basePath ?? "", abs).split(sep).join("/");
-    const posts = site
-      ? (await scanPosts(site)).map((post) => ({ ...post, path: toVaultPath(post.path) }))
-      : [];
-
-    return serializeSnapshot(buildSnapshot({
-      version: this.manifest.version,
-      generatedAt: new Date().toISOString(),
-      vaultItems,
-      repos,
-      resolveProjectTags: (item) => this.projectManager.resolveProjectTags(item),
-      hugoContentDir: site ? toVaultPath(site.contentDir) || "." : null,
-      posts,
-    }));
-  }
-
-  /** Builds ProjectSyncManager's SyncOptions/ProjectsSidebarOptions from current settings. */
-  projectsSyncOptions() {
-    return {
-      baseFolder: this.settings.projectsBaseFolder,
-      projectsFolder: this.settings.defaultProjectsFolder,
-      excludeDirs: this.settings.projectsExcludeDirs,
-      scanDepth: this.settings.projectsScanDepth,
-      maxDepth: this.settings.projectsScanDepth,
-      autoOpenOnLinkedNote: this.settings.autoOpenProjectsOnLinkedNote,
-      terminalApp: this.settings.projectsTerminalApp,
-      editorApp: this.settings.projectsEditorApp,
-    };
-  }
-
-  /** Builds PostsSidebarOptions from current settings — deliberately its own method, not folded into projectsSyncOptions(). See HugoScanner.ts's module comment. */
-  postsOptions(): PostsSidebarOptions {
-    return {
-      editorApp: this.settings.postsEditorApp,
-    };
-  }
-
-  /**
-   * Opens the "Send selection to project" title prompt and, on submit,
-   * appends the editor's current selection to the project's TODO.md.
-   * Shared by the command palette entry and the editor right-click menu
-   * item so the two triggers can't drift apart in behaviour.
-   */
-  private openSendSelectionToProjectModal(file: TFile, repo: string, editor: Editor): void {
-    const selection = editor.getSelection();
-    new SendToProjectModal(this.app, file.basename, async (title) => {
-      try {
-        const filePath = await appendQueuedTodo(repo, title, selection);
-        showNotice(`Sent to ${homeRelativePath(filePath)}.`);
-      } catch (error) {
-        console.error("[Warped Todo]", "Failed to send selection to project:", error);
-        showNotice("Couldn't send selection to the project. See console for details.");
-      }
-    }).open();
-  }
-
   onunload() {
-    // Detach the sidebar view
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_TODO_SIDEBAR);
-    // Migration cleanup: pre-0.35.3 installs could have a leaf of the old,
-    // now-unregistered standalone Projects view still saved in the user's
-    // workspace layout (Projects folded into TodoSidebarView as a tab —
-    // see ProjectsSidebarView.ts's file-level comment). Detaching by the
-    // hardcoded former VIEW_TYPE_PROJECTS_SIDEBAR string clears it instead
-    // of leaving an unrecognized-view leaf behind.
-    this.app.workspace.detachLeavesOfType("warped-todo-projects-sidebar");
     // Restore Obsidian's own link lookup
     this.titleLinkResolver?.destroy();
     // Clean up tab lock manager
     this.tabLockManager.destroy();
-    // Stop the Projects file watcher (fs.watch doesn't clean itself up)
-    this.projectSyncManager?.stopWatching();
-    // Flush any pending projectSyncState write so a sync that landed just
-    // before unload isn't lost.
-    if (this.projectSyncStateSaveTimer) {
-      clearTimeout(this.projectSyncStateSaveTimer);
-      this.projectSyncStateSaveTimer = null;
-      void this.saveSettings();
-    }
   }
 
   /**
@@ -668,198 +196,18 @@ export default class WarpedTodoPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    // Only known keys: settings dropped in 1.0 (sidebar, projects, focus
+    // mode, …) fall out of data.json on the next save.
+    const saved = (await this.loadData()) ?? {};
+    const settings = { ...DEFAULT_SETTINGS } as Record<string, unknown>;
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      if (key in saved) settings[key] = saved[key];
+    }
+    this.settings = settings as unknown as WarpedTodoSettings;
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
-  }
-
-  private projectSyncStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
-
-  /**
-   * Debounced persist for `settings.projectSyncState`. A full project scan
-   * calls the store's `set` once per project; without the debounce that's a
-   * `data.json` write per repo. 2s comfortably covers a scan pass.
-   */
-  private scheduleProjectSyncStateSave(): void {
-    if (this.projectSyncStateSaveTimer) clearTimeout(this.projectSyncStateSaveTimer);
-    this.projectSyncStateSaveTimer = setTimeout(() => {
-      this.projectSyncStateSaveTimer = null;
-      void this.saveSettings();
-    }, 2000);
-  }
-
-  /** Refresh all sidebar views (delegates to SidebarManager). */
-  refreshSidebar() {
-    this.sidebarManager.refresh();
-  }
-
-  /**
-   * Opens (if closed) the TODO sidebar and switches it to the Projects
-   * tab — Settings' "Open Projects tab" button and the
-   * "toggle-projects-sidebar" command both go through this. With a tag,
-   * jumps straight to that project's detail view.
-   */
-  async openProjectsTab(tag?: string) {
-    await this.sidebarManager.activate();
-    this.sidebarManager.getView<TodoSidebarView>()?.openProjectsTab(tag);
-  }
-
-  showAboutModal() {
-    new AboutModal(this.app, this.manifest.version).open();
-  }
-
-  showStatsModal() {
-    new StatsModal(this.app, this.scanner).open();
-  }
-
-}
-
-// About modal for displaying plugin information
-class AboutModal extends Modal {
-  private version: string;
-
-  constructor(app: App, version: string) {
-    super(app);
-    this.version = version;
-  }
-
-  onOpen(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("warped-todo-about-modal");
-
-    // Logo and title
-    const header = contentEl.createEl("div", { cls: "about-header" });
-    header.createEl("span", { cls: "warped-todo-logo about-logo", text: "␣⌘" });
-    header.createEl("h2", { text: "Warped Command" });
-
-    // Version
-    contentEl.createEl("p", { cls: "about-version", text: `Version ${this.version}` });
-
-    // Blurb
-    contentEl.createEl("p", {
-      cls: "about-blurb",
-      text: "Focus on the right next task. Simple TODOs and tags in your markdown, surfaced when you need them.",
-    });
-
-    // Details
-    const details = contentEl.createEl("div", { cls: "about-details" });
-    details.createEl("p", { text: "Author: Bruce Alderson" });
-
-    const repoLink = details.createEl("p");
-    repoLink.appendText("Repository: ");
-    repoLink.createEl("a", {
-      text: "github.com/robotpony/warped-command",
-      href: "https://github.com/robotpony/warped-command/blob/main/README.md",
-    });
-
-    details.createEl("p", { text: "Made in 🇨🇦", cls: "about-made-in" });
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}
-
-// Stats modal for displaying vault statistics
-class StatsModal extends Modal {
-  private scanner: TodoScanner;
-
-  constructor(app: App, scanner: TodoScanner) {
-    super(app);
-    this.scanner = scanner;
-  }
-
-  onOpen(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("warped-todo-stats-modal");
-
-    // Header
-    const header = contentEl.createEl("div", { cls: "stats-header" });
-    header.createEl("span", { cls: "warped-todo-logo stats-logo", text: "␣⌘" });
-    header.createEl("h2", { text: "Vault Statistics" });
-
-    // Gather stats
-    const todos = this.scanner.getTodos();
-    const todones = this.scanner.getTodones();
-    const ideas = this.scanner.getIdeas();
-    const principles = this.scanner.getPrinciples();
-
-    // Count focused items
-    const focusedTodos = todos.filter(t => t.tags.includes("#focus")).length;
-    const focusedIdeas = ideas.filter(i => i.tags.includes("#focus")).length;
-
-    // Count snoozed items
-    const snoozedTodos = todos.filter(t => t.tags.includes("#future")).length;
-
-    // Stats grid
-    const statsGrid = contentEl.createEl("div", { cls: "stats-grid" });
-
-    // TODOs section
-    const todosSection = statsGrid.createEl("div", { cls: "stats-section" });
-    todosSection.createEl("h3", { text: "TODOs" });
-    this.createStatRow(todosSection, "Active", todos.length);
-    this.createStatRow(todosSection, "Focused", focusedTodos);
-    this.createStatRow(todosSection, "Snoozed", snoozedTodos);
-    this.createStatRow(todosSection, "Completed", todones.length);
-
-    // Ideas section
-    const ideasSection = statsGrid.createEl("div", { cls: "stats-section" });
-    ideasSection.createEl("h3", { text: "Ideas" });
-    this.createStatRow(ideasSection, "Total", ideas.length);
-    this.createStatRow(ideasSection, "Focused", focusedIdeas);
-
-    // Principles section
-    const principlesSection = statsGrid.createEl("div", { cls: "stats-section" });
-    principlesSection.createEl("h3", { text: "Principles" });
-    this.createStatRow(principlesSection, "Total", principles.length);
-
-    // Summary
-    const summarySection = contentEl.createEl("div", { cls: "stats-summary" });
-    const total = todos.length + todones.length + ideas.length + principles.length;
-    summarySection.createEl("p", {
-      text: `Total tracked items: ${total}`,
-      cls: "stats-total"
-    });
-  }
-
-  private createStatRow(container: HTMLElement, label: string, value: number): void {
-    const row = container.createEl("div", { cls: "stats-row" });
-    row.createEl("span", { cls: "stats-label", text: label });
-    row.createEl("span", { cls: "stats-value", text: String(value) });
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}
-
-/**
- * Native folder picker for the Projects base folder setting — Electron's
- * synchronous dialog, same electron.remote fallback SidebarView.ts's
- * revealProjectInFinder uses for shell.showItemInFolder (this plugin is
- * desktop-only anyway; see manifest.json's isDesktopOnly). Returns null on
- * cancel or failure; a failure shows a notice rather than throwing, so a
- * picker error doesn't crash the settings tab.
- */
-function chooseFolder(defaultPath: string): string | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const electron = require("electron");
-    const dialog = electron.remote?.dialog ?? electron.dialog;
-    const result = dialog.showOpenDialogSync({
-      title: "Choose Projects folder",
-      defaultPath,
-      properties: ["openDirectory", "createDirectory"],
-    });
-    return result && result.length > 0 ? result[0] : null;
-  } catch (error) {
-    console.error("[Warped Todo]", "Failed to open folder picker:", error);
-    showNotice("Couldn't open the folder picker. See console for details.");
-    return null;
   }
 }
 
@@ -907,27 +255,14 @@ function chooseVaultPath(vault: Vault, kind: "file" | "folder", title: string, c
 
 class WarpedTodoSettingTab extends PluginSettingTab {
   plugin: WarpedTodoPlugin;
-  // Set inside display() by the Projects base folder field; applies the
-  // pending value (restart the file watcher, full resync) once, deduped
-  // against what was last applied. Covers the "modal closed with the field
-  // still focused" case, where a blur event may not fire — see that field's
-  // own comment for why the actual apply is deferred to blur in the first
-  // place.
-  private pendingProjectsBaseFolderApply: (() => Promise<void>) | null = null;
   // Sticky across display() re-renders: true once the user explicitly picks
   // "Custom…" in the insert date format dropdown, so the text field stays
   // visible even if what they type happens to match a preset's format string.
   private showCustomInsertDateFormat = false;
-  // Same, for the completion date format dropdown.
-  private showCustomCompletionDateFormat = false;
 
   constructor(app: App, plugin: WarpedTodoPlugin) {
     super(app, plugin);
     this.plugin = plugin;
-  }
-
-  hide(): void {
-    void this.pendingProjectsBaseFolderApply?.();
   }
 
   display(): void {
@@ -957,100 +292,8 @@ class WarpedTodoSettingTab extends PluginSettingTab {
       href: "https://github.com/robotpony/warped-command/blob/main/README.md",
     });
 
-    // Sidebar section (first)
-    containerEl.createEl("h3", { text: "Sidebar" });
-
-    new Setting(containerEl)
-      .setName("Show sidebar by default")
-      .setDesc("Show the TODO sidebar when Obsidian starts")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.showSidebarByDefault)
-          .onChange(async (value) => {
-            this.plugin.settings.showSidebarByDefault = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Show tab lock buttons")
-      .setDesc("Add lock buttons to tab headers. Locked tabs force links to open in new tabs.")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.showTabLockButton)
-          .onChange(async (value) => {
-            this.plugin.settings.showTabLockButton = value;
-            if (value) {
-              this.plugin.tabLockManager.enable();
-            } else {
-              this.plugin.tabLockManager.disable();
-            }
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Make links clickable in lists")
-      .setDesc("Render wiki links and markdown links as clickable in the sidebar. When disabled, links display as plain text without markdown syntax.")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.makeLinksClickable)
-          .onChange(async (value) => {
-            this.plugin.settings.makeLinksClickable = value;
-            await this.plugin.saveSettings();
-            this.plugin.refreshSidebar();
-          })
-      );
-
-    // TODOs section
-    containerEl.createEl("h3", { text: "TODOs" });
-
-    const completionFormatIsPreset = DATE_FORMAT_PRESETS.some(
-      (p) => p.format === this.plugin.settings.dateFormat
-    );
-    const showCustomCompletionField = this.showCustomCompletionDateFormat || !completionFormatIsPreset;
-
-    new Setting(containerEl)
-      .setName("Completion date format")
-      .setDesc(
-        "Format for #todone completion stamps. Stick to a format that sorts the same as it reads (like the default) " +
-        "so completed items keep sorting newest-first; anything else still reopens cleanly but falls back to original order."
-      )
-      .addDropdown((dropdown) => {
-        for (const preset of DATE_FORMAT_PRESETS) {
-          dropdown.addOption(preset.format, preset.label);
-        }
-        dropdown.addOption("custom", "Custom…");
-        dropdown.setValue(showCustomCompletionField ? "custom" : this.plugin.settings.dateFormat);
-        dropdown.onChange(async (value) => {
-          if (value === "custom") {
-            this.showCustomCompletionDateFormat = true;
-            this.display();
-            return;
-          }
-          this.showCustomCompletionDateFormat = false;
-          this.plugin.settings.dateFormat = value;
-          this.plugin.processor = new TodoProcessor(this.app, value);
-          await this.plugin.saveSettings();
-          this.display();
-        });
-      });
-
-    if (showCustomCompletionField) {
-      new Setting(containerEl)
-        .setName("Custom completion date format")
-        .setDesc("moment.js format string, e.g. YYYY-MM-DD → 2026-05-09, D/M/YYYY → 9/5/2026")
-        .addText((text) =>
-          text
-            .setPlaceholder("YYYY-MM-DD")
-            .setValue(this.plugin.settings.dateFormat)
-            .onChange(async (value) => {
-              this.plugin.settings.dateFormat = value;
-              this.plugin.processor = new TodoProcessor(this.app, value);
-              await this.plugin.saveSettings();
-            })
-        );
-    }
+    // Editor section
+    containerEl.createEl("h3", { text: "Editor" });
 
     const insertFormatIsPreset = DATE_FORMAT_PRESETS.some(
       (p) => p.format === this.plugin.settings.insertDateFormat
@@ -1097,280 +340,18 @@ class WarpedTodoSettingTab extends PluginSettingTab {
     }
 
     new Setting(containerEl)
-      .setName("Active TODOs limit")
-      .setDesc("Maximum number of TODOs to show in sidebar (0 for unlimited)")
-      .addText((text) =>
-        text
-          .setPlaceholder("5")
-          .setValue(String(this.plugin.settings.activeTodosLimit))
-          .onChange(async (value) => {
-            const num = parseInt(value);
-            if (!isNaN(num) && num >= 0) {
-              this.plugin.settings.activeTodosLimit = num;
-              await this.plugin.saveSettings();
-            }
-          })
-      );
-
-    // Projects section
-    containerEl.createEl("h3", { text: "Projects" });
-
-    new Setting(containerEl)
-      .setName("Open Projects tab")
-      .setDesc("Jump to the Projects tab directly from settings.")
-      .addButton((btn) =>
-        btn.setButtonText("Open Projects tab").onClick(() => {
-          this.plugin.openProjectsTab();
-        })
-      );
-
-    {
-      let projectsFolderVaultText: TextComponent;
-      new Setting(containerEl)
-        .setName("Default projects folder")
-        .setDesc("Folder scanned for project files. TODOs here get automatic project tags if no explicit tag is set (e.g., projects/)")
-        .addText((text) => {
-          projectsFolderVaultText = text;
-          text
-            .setPlaceholder("projects/")
-            .setValue(this.plugin.settings.defaultProjectsFolder)
-            .onChange(async (value) => {
-              this.plugin.settings.defaultProjectsFolder = value;
-              await this.plugin.saveSettings();
-            });
-        })
-        .addExtraButton((btn) =>
-          btn
-            .setIcon("folder-open")
-            .setTooltip("Choose a folder")
-            .onClick(async () => {
-              const chosen = chooseVaultPath(this.app.vault, "folder", "Choose projects folder", this.plugin.settings.defaultProjectsFolder);
-              if (!chosen) return;
-              projectsFolderVaultText.setValue(chosen);
-              this.plugin.settings.defaultProjectsFolder = chosen;
-              await this.plugin.saveSettings();
-            })
-        );
-    }
-
-    new Setting(containerEl)
-      .setName("Exclude folders from auto-tagging")
-      .setDesc("Comma-separated folders to exclude from inferred project tags (e.g., log, archive)")
-      .addText((text) =>
-        text
-          .setPlaceholder("log")
-          .setValue(this.plugin.settings.excludeFoldersFromProjects.join(", "))
-          .onChange(async (value) => {
-            const folders = value
-              .split(",")
-              .map(f => f.trim())
-              .filter(f => f.length > 0);
-
-            this.plugin.settings.excludeFoldersFromProjects = folders;
-
-            this.plugin.projectManager = new ProjectManager(
-              this.app,
-              this.plugin.scanner,
-              this.plugin.settings.defaultProjectsFolder,
-              this.plugin.settings.priorityTags,
-              folders
-            );
-
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Priority tags")
-      .setDesc("Comma-separated tags excluded from automatic project-tag inference (e.g., #focus, #today, #p0). This only controls what's excluded here — it doesn't change what any of these tags actually do elsewhere in the plugin.")
-      .addText((text) =>
-        text
-          .setPlaceholder("#p0, #p1, #p2, #p3, #p4")
-          .setValue(this.plugin.settings.priorityTags.join(", "))
-          .onChange(async (value) => {
-            const tags = value
-              .split(",")
-              .map((t) => t.trim())
-              .filter((t) => t.length > 0);
-
-            this.plugin.settings.priorityTags = tags;
-
-            this.plugin.projectManager = new ProjectManager(
-              this.app,
-              this.plugin.scanner,
-              this.plugin.settings.defaultProjectsFolder,
-              tags,
-              this.plugin.settings.excludeFoldersFromProjects
-            );
-
-            await this.plugin.saveSettings();
-          })
-      );
-
-    {
-      // Typing into this field used to restart the file watcher (stop +
-      // recreate a recursive fs.watch) on every keystroke — pointless work
-      // for every character typed, and it never actually resynced the
-      // project list, just started watching for *future* changes. A
-      // half-typed path also isn't a real folder yet, so there was nothing
-      // useful to do with it until the user was done. Now onChange only
-      // persists the raw text; the actual apply (restart watching, full
-      // resync so "Projects" tab/sidebar reflect the new folder without a
-      // manual "Sync") happens once, on blur — or on the settings tab's own
-      // hide() as a fallback, in case the modal closes without a blur event.
-      // lastApplied dedupes so blur-then-hide (or refocusing without
-      // editing) doesn't trigger a second, redundant resync.
-      let lastApplied = this.plugin.settings.projectsBaseFolder;
-      const applyBaseFolderChange = async () => {
-        const value = this.plugin.settings.projectsBaseFolder;
-        if (value === lastApplied) return;
-        lastApplied = value;
-        if (value) {
-          this.plugin.projectSyncManager.startWatching(this.plugin.projectsSyncOptions());
-          try {
-            await this.plugin.projectSyncManager.syncAll(this.plugin.projectsSyncOptions());
-          } catch (error) {
-            console.error("[Warped Todo]", "Project sync failed:", error);
-            showNotice("Couldn't sync Projects. See console for details.");
-          }
-        } else {
-          this.plugin.projectSyncManager.stopWatching();
-        }
-      };
-      this.pendingProjectsBaseFolderApply = applyBaseFolderChange;
-
-      let projectsFolderText: TextComponent;
-      new Setting(containerEl)
-        .setName("Projects base folder")
-        .setDesc("Folder of git repos scanned for project notes (e.g., /Users/you/projects). Leave blank to disable repo syncing.")
-        .addText((text) => {
-          projectsFolderText = text;
-          text
-            .setPlaceholder("/Users/you/projects")
-            .setValue(this.plugin.settings.projectsBaseFolder)
-            .onChange(async (value) => {
-              this.plugin.settings.projectsBaseFolder = value;
-              await this.plugin.saveSettings();
-            });
-          text.inputEl.addEventListener("blur", () => void applyBaseFolderChange());
-        })
-        .addExtraButton((btn) =>
-          btn
-            .setIcon("folder-open")
-            .setTooltip("Choose a folder")
-            .onClick(async () => {
-              const chosen = chooseFolder(
-                this.plugin.settings.projectsBaseFolder || guessProjectsFolder()
-              );
-              if (!chosen) return;
-              projectsFolderText.setValue(chosen);
-              this.plugin.settings.projectsBaseFolder = chosen;
-              await this.plugin.saveSettings();
-              await applyBaseFolderChange();
-            })
-        );
-    }
-
-    new Setting(containerEl)
-      .setName("Exclude repo directories from scan")
-      .setDesc("Comma-separated directory names to skip while scanning for repos (e.g., node_modules, dist, build, archive)")
-      .addText((text) =>
-        text
-          .setPlaceholder("node_modules, dist, build, archive")
-          .setValue(this.plugin.settings.projectsExcludeDirs.join(", "))
-          .onChange(async (value) => {
-            this.plugin.settings.projectsExcludeDirs = value
-              .split(",")
-              .map((d) => d.trim())
-              .filter((d) => d.length > 0);
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Projects scan depth")
-      .setDesc("How many folder levels deep to look for repos under the base folder (0 = base folder only)")
-      .addSlider((slider) =>
-        slider
-          .setLimits(0, 6, 1)
-          .setValue(this.plugin.settings.projectsScanDepth)
-          .setDynamicTooltip()
-          .onChange(async (value) => {
-            this.plugin.settings.projectsScanDepth = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Auto-open Projects tab")
-      .setDesc("Opening a linked project note jumps the sidebar to its Projects summary, even from the TODOs/Ideas tab. Back returns to whatever tab you were on.")
+      .setName("Show tab lock buttons")
+      .setDesc("Add lock buttons to tab headers. Locked tabs force links to open in new tabs.")
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.autoOpenProjectsOnLinkedNote)
+          .setValue(this.plugin.settings.showTabLockButton)
           .onChange(async (value) => {
-            this.plugin.settings.autoOpenProjectsOnLinkedNote = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Terminal app")
-      .setDesc("App name used by the Projects detail view's \"Open in Terminal\" action (macOS only).")
-      .addText((text) =>
-        text
-          .setPlaceholder("Terminal")
-          .setValue(this.plugin.settings.projectsTerminalApp)
-          .onChange(async (value) => {
-            this.plugin.settings.projectsTerminalApp = value.trim() || "Terminal";
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Editor app")
-      .setDesc("App name used by the Projects detail view's \"Open in Editor\" action (macOS only).")
-      .addText((text) =>
-        text
-          .setPlaceholder("Visual Studio Code")
-          .setValue(this.plugin.settings.projectsEditorApp)
-          .onChange(async (value) => {
-            this.plugin.settings.projectsEditorApp = value.trim() || "Visual Studio Code";
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Default projects sort")
-      .setDesc("Sort the Projects list opens with each session. Changing the sort from the list's own sort button doesn't update this — it's session-only, same as the filter box.")
-      .addDropdown((dropdown) => {
-        for (const option of PROJECT_SORT_OPTIONS) {
-          dropdown.addOption(option.key, option.label);
-        }
-        dropdown.setValue(this.plugin.settings.defaultProjectsSortKey);
-        dropdown.onChange(async (value) => {
-          this.plugin.settings.defaultProjectsSortKey = value as WarpedTodoSettings["defaultProjectsSortKey"];
-          await this.plugin.saveSettings();
-        });
-      });
-
-    // Posts section — deliberately separate from Projects above: Posts
-    // assumes the Hugo site (if there is one) is the vault itself, and
-    // never reads projectsBaseFolder or anything else from the Projects
-    // extension. See HugoScanner.ts's module comment for why the two must
-    // stay independent (an earlier version borrowed Projects' broad,
-    // multi-repo scan for this, and a repo elsewhere under that scan could
-    // silently shadow the real site).
-    containerEl.createEl("h3", { text: "Posts" });
-
-    new Setting(containerEl)
-      .setName("Editor app")
-      .setDesc("App name used by the Posts tab's \"Open in Editor\" action (macOS only). Independent of the Projects section's \"Editor app\" above — Posts doesn't read that setting.")
-      .addText((text) =>
-        text
-          .setPlaceholder("Visual Studio Code")
-          .setValue(this.plugin.settings.postsEditorApp)
-          .onChange(async (value) => {
-            this.plugin.settings.postsEditorApp = value.trim() || "Visual Studio Code";
+            this.plugin.settings.showTabLockButton = value;
+            if (value) {
+              this.plugin.tabLockManager.enable();
+            } else {
+              this.plugin.tabLockManager.disable();
+            }
             await this.plugin.saveSettings();
           })
       );
@@ -1385,35 +366,6 @@ class WarpedTodoSettingTab extends PluginSettingTab {
             this.plugin.settings.resolveTitleLinks = value;
             await this.plugin.saveSettings();
             await this.plugin.updateTitleLinkResolver();
-          })
-      );
-
-    // Focus Mode section
-    containerEl.createEl("h3", { text: "Focus Mode" });
-
-    new Setting(containerEl)
-      .setName("Focus queue limit")
-      .setDesc("How many items to show at once in Focus Mode (1–5). 1 means strict single-task focus.")
-      .addSlider((slider) =>
-        slider
-          .setLimits(1, 5, 1)
-          .setValue(this.plugin.settings.focusQueueLimit)
-          .setDynamicTooltip()
-          .onChange(async (value) => {
-            this.plugin.settings.focusQueueLimit = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Persist focus mode across sessions")
-      .setDesc("When on, Focus Mode stays active after closing and reopening Obsidian.")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.focusModePersist)
-          .onChange(async (value) => {
-            this.plugin.settings.focusModePersist = value;
-            await this.plugin.saveSettings();
           })
       );
 
@@ -1483,24 +435,6 @@ class WarpedTodoSettingTab extends PluginSettingTab {
           entry.createEl("span", { cls: "warped-todo-team-me-badge", text: "(me)" });
         }
       }
-
-      new Setting(containerEl)
-        .setName("Default assignee")
-        .setDesc("Unattributed tasks are treated as belonging to this person when filtering")
-        .addDropdown((dropdown) => {
-          dropdown.addOption("", "None");
-          dropdown.addOption("me", "@me");
-          for (const member of team) {
-            if (!member.isMe) {
-              dropdown.addOption(member.handle, `@${member.handle}`);
-            }
-          }
-          dropdown.setValue(this.plugin.settings.defaultAssignee);
-          dropdown.onChange(async (value) => {
-            this.plugin.settings.defaultAssignee = value;
-            await this.plugin.saveSettings();
-          });
-        });
     }
 
     // Help section (last)

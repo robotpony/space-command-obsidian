@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { normalizeLinkTitle } from "../HugoParser";
-import { TitleLinkIndex, isRegularPagePath } from "../HugoTitleLinks";
+import { TitleLinkIndex, detectVaultContentPrefix, isRegularPagePath } from "../HugoTitleLinks";
 
 describe("normalizeLinkTitle", () => {
   it("lowercases and collapses non-alphanumeric runs to one space", () => {
@@ -63,5 +63,26 @@ describe("isRegularPagePath", () => {
   it("accepts the whole vault when the content dir is the root", () => {
     expect(isRegularPagePath("x.md", "")).toBe(true);
     expect(isRegularPagePath("_index.md", "")).toBe(false);
+  });
+});
+
+describe("detectVaultContentPrefix", () => {
+  const vault = (files: Record<string, string>) => ({
+    exists: async (path: string) => path in files,
+    read: async (path: string) => files[path],
+  });
+
+  it("finds the root config and resolves contentDir", async () => {
+    expect(await detectVaultContentPrefix(vault({ "hugo.toml": 'title = "x"' }))).toBe("content");
+    expect(await detectVaultContentPrefix(vault({ "config/_default/hugo.yaml": "contentDir: posts" }))).toBe("posts");
+  });
+
+  it("prefers hugo.* over config.*", async () => {
+    expect(await detectVaultContentPrefix(vault({ "config.toml": 'contentDir = "old"', "hugo.toml": 'contentDir = "new"' }))).toBe("new");
+  });
+
+  it("is null without a config, or with a contentDir outside the vault", async () => {
+    expect(await detectVaultContentPrefix(vault({}))).toBeNull();
+    expect(await detectVaultContentPrefix(vault({ "hugo.toml": 'contentDir = "../out"' }))).toBeNull();
   });
 });

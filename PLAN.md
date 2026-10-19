@@ -93,6 +93,8 @@ Three kept helpers reach through `TodoScanner`'s index to `TodoProcessor`. Make 
 
 `### Removed` in the 1.0.0 entry. Delete, then fix the build until `npm run build` and `npm test` pass.
 
+**Done 2026-10-19 (0.57.0).** As in the table, plus: the Priority tags setting went too (Phase 5's vocabulary comes from `src/tags.ts`), and Hugo title links detect the vault-root config through the vault adapter, so the only Node APIs left are `path`/`electron` in the settings tab's file picker and `os` in `TeamManager`.
+
 | Area | Files | Notes |
 |---|---|---|
 | Sidebar, Stats, tag cloud, focus mode | `SidebarView.ts`, `ContextMenuHandler.ts`, `src/shared/plugin/SidebarManager.ts`, `prototype/` | Also the ribbon and commands: Toggle TODO Sidebar, Refresh TODOs, Toggle Projects Tab |
