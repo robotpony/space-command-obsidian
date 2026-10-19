@@ -125,6 +125,12 @@ export default class WarpedTodoPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "update-team-note",
+      name: "Update team note",
+      callback: () => void this.updateTeamNote(),
+    });
+
+    this.addCommand({
       id: "sort-block-at-cursor",
       name: "Sort block at cursor",
       editorCallback: (editor) => sortBlockAtCursor(editor),
@@ -165,6 +171,21 @@ export default class WarpedTodoPlugin extends Plugin {
     this.titleLinkResolver?.destroy();
     // Clean up tab lock manager
     this.tabLockManager.destroy();
+  }
+
+  /** Appends the @handles used on the vault's task lines that the team note lacks. */
+  private async updateTeamNote(): Promise<void> {
+    const path = this.settings.teamFilePath;
+    try {
+      const added = await this.teamManager.addHandles(await this.teamManager.getSeenHandles(true));
+      showNotice(
+        added.length > 0
+          ? `Added ${pluralize(added.length, "handle")} to ${path}: ${added.map((h) => `@${h}`).join(", ")}`
+          : `${path} already lists every handle used in tasks.`
+      );
+    } catch (e) {
+      showNotice(`Couldn't update ${path}: ${e instanceof Error ? e.message : e}`);
+    }
   }
 
   /**
@@ -374,7 +395,7 @@ class WarpedTodoSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Team file path")
-      .setDesc("Path to the team definition file in your vault")
+      .setDesc("Your @handle list, in a vault note. It's written only when you choose \"Add @handle to team\" or run Update team note.")
       .addText((text) =>
         text
           .setPlaceholder("team.md")

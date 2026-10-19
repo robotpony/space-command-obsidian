@@ -77,7 +77,7 @@ export interface FoundTag {
  * run of N backticks opens a span that closes at the next run of exactly
  * N; an unclosed run is literal text (TagExtractor.codeSpanMask).
  */
-function codeSpanMask(line: string): boolean[] {
+export function codeSpanMask(line: string): boolean[] {
   const mask: boolean[] = new Array(line.length).fill(false);
   const runLength = (from: number) => {
     let end = from;

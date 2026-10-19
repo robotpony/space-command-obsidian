@@ -245,6 +245,348 @@ var SlashCommandSuggest = class extends import_obsidian3.EditorSuggest {
 
 // src/AtSuggest.ts
 var import_obsidian4 = require("obsidian");
+
+// src/blocks.ts
+function headingLevel(line) {
+  const match = line.match(/^(#{1,6})\s+\S/);
+  return match ? match[1].length : 0;
+}
+var FENCE = /^\s*(```|~~~)/;
+function fencedLines(lines) {
+  const fenced = new Array(lines.length).fill(false);
+  let open = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (FENCE.test(lines[i])) {
+      fenced[i] = true;
+      open = !open;
+    } else {
+      fenced[i] = open;
+    }
+  }
+  return fenced;
+}
+function blockAtHeading(lines, headingLine, fenced = fencedLines(lines)) {
+  var _a;
+  if (fenced[headingLine])
+    return null;
+  const level = headingLevel((_a = lines[headingLine]) != null ? _a : "");
+  if (!level)
+    return null;
+  let end = headingLine + 1;
+  while (end < lines.length && (fenced[end] || !headingLevel(lines[end])))
+    end++;
+  while (end > headingLine + 1 && lines[end - 1].trim() === "")
+    end--;
+  return { headingLine, level, end };
+}
+function findBlock(lines, line, accept = () => true) {
+  if (line < 0 || line >= lines.length)
+    return null;
+  const fenced = fencedLines(lines);
+  for (let i = line; i >= 0; i--) {
+    if (fenced[i] || !headingLevel(lines[i]))
+      continue;
+    return accept(lines[i]) ? blockAtHeading(lines, i, fenced) : null;
+  }
+  return null;
+}
+var LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s/;
+function listIndent(line) {
+  const match = line.match(LIST_ITEM);
+  return match ? match[1].replace(/\t/g, "    ").length : -1;
+}
+function indentWidth(line) {
+  var _a, _b;
+  return ((_b = (_a = line.match(/^\s*/)) == null ? void 0 : _a[0]) != null ? _b : "").replace(/\t/g, "    ").length;
+}
+function listItemEnd(lines, line) {
+  var _a;
+  const indent = listIndent((_a = lines[line]) != null ? _a : "");
+  if (indent < 0)
+    return line + 1;
+  let end = line + 1;
+  while (end < lines.length && lines[end].trim() !== "" && indentWidth(lines[end]) > indent)
+    end++;
+  return end;
+}
+
+// src/tags.ts
+var TASK_TAGS = ["#todo", "#todos"];
+var DONE_TAGS = ["#todone", "#todones"];
+var IDEA_TAGS = ["#idea", "#ideas", "#ideation"];
+var PRINCIPLE_TAGS = ["#principle", "#principles"];
+var KIND_TAGS = [...TASK_TAGS, ...DONE_TAGS, ...IDEA_TAGS, ...PRINCIPLE_TAGS];
+var FOCUS_TAG = "#focus";
+var PRIORITY_TAGS = ["#p0", "#p1", "#p2", "#p3", "#p4"];
+var SNOOZE_TAG = "#snooze";
+var SNOOZE_TAGS = [SNOOZE_TAG, "#snoozed", "#future"];
+function tagRole(tag) {
+  const name = tag.toLowerCase();
+  if (TASK_TAGS.includes(name))
+    return "todo";
+  if (DONE_TAGS.includes(name))
+    return "todone";
+  if (IDEA_TAGS.includes(name))
+    return "idea";
+  if (PRINCIPLE_TAGS.includes(name))
+    return "principle";
+  if (name === FOCUS_TAG)
+    return "focus";
+  if (PRIORITY_TAGS.includes(name))
+    return "priority";
+  if (SNOOZE_TAGS.includes(name))
+    return "snooze";
+  return "category";
+}
+function codeSpanMask(line) {
+  const mask = new Array(line.length).fill(false);
+  const runLength = (from) => {
+    let end = from;
+    while (line[end] === "`")
+      end++;
+    return end - from;
+  };
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] !== "`") {
+      i++;
+      continue;
+    }
+    const open = runLength(i);
+    let search = i + open;
+    let closed = false;
+    while (search < line.length) {
+      if (line[search] === "`") {
+        const run = runLength(search);
+        if (run === open) {
+          mask.fill(true, i, search + run);
+          i = search + run;
+          closed = true;
+          break;
+        }
+        search += run;
+      } else {
+        search++;
+      }
+    }
+    if (!closed)
+      i += open;
+  }
+  return mask;
+}
+var TAG = /#[\p{L}\p{N}_/-]+/gu;
+function findTags(line) {
+  const mask = codeSpanMask(line);
+  const tags = [];
+  for (const match of line.matchAll(TAG)) {
+    const from = match.index;
+    if (mask[from] || from > 0 && !/\s/.test(line[from - 1]))
+      continue;
+    if (/^#\d+$/.test(match[0]))
+      continue;
+    tags.push({ raw: match[0], name: match[0].toLowerCase(), from, to: from + match[0].length });
+  }
+  return tags;
+}
+function lineTags(line) {
+  return findTags(line).map((t) => t.name);
+}
+function hasAnyTag(line, tags) {
+  return lineTags(line).some((t) => tags.includes(t));
+}
+function ownKind(line) {
+  if (hasAnyTag(line, TASK_TAGS))
+    return "task";
+  if (hasAnyTag(line, IDEA_TAGS))
+    return "idea";
+  if (hasAnyTag(line, PRINCIPLE_TAGS))
+    return "principle";
+  return null;
+}
+function taggedHeadingKind(line) {
+  if (!headingLevel(line) || hasAnyTag(line, DONE_TAGS))
+    return null;
+  return ownKind(line);
+}
+function isTaggedHeading(line) {
+  return taggedHeadingKind(line) !== null;
+}
+function splice(line, from, to, insert) {
+  return line.slice(0, from) + insert + line.slice(to);
+}
+function inCaseOf(tag, to) {
+  const shouted = tag.raw === tag.raw.toUpperCase() && tag.raw !== tag.raw.toLowerCase();
+  return shouted ? to.toUpperCase() : to;
+}
+function renameTags(line, renames, dropStamp = false) {
+  const tags = findTags(line).filter((t) => t.name in renames);
+  for (const tag of tags.reverse()) {
+    let to = tag.to;
+    if (dropStamp) {
+      const stamp = line.slice(to).match(/^\s+@\d{4}-\d{2}-\d{2}(?![\w-])/);
+      if (stamp)
+        to += stamp[0].length;
+    }
+    line = splice(line, tag.from, to, inCaseOf(tag, renames[tag.name]));
+  }
+  return line;
+}
+function appendTag(line, tag) {
+  const end = line.trimEnd().length;
+  return splice(line, end, end, end === 0 ? tag : ` ${tag}`);
+}
+var BOX = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/;
+var BULLET = /^(\s*(?:[-*+]|\d+[.)])\s+)/;
+function boxState(line) {
+  const match = line.match(BOX);
+  return match ? match[2] !== " " : null;
+}
+function isStruck(line) {
+  const body = line.replace(BOX, "").replace(BULLET, "").trim();
+  return /^~~.+~~/.test(body);
+}
+var DONE_FORM = { "#todo": "#todone", "#todos": "#todones" };
+var OPEN_FORM = { "#todone": "#todo", "#todones": "#todos" };
+function syncCheckboxToggle(line, ctx = {}) {
+  const box = boxState(line);
+  if (box === null || isStruck(line))
+    return null;
+  if (hasAnyTag(line, [...IDEA_TAGS, ...PRINCIPLE_TAGS]))
+    return null;
+  if (ctx.headingKind && !hasAnyTag(line, [...TASK_TAGS, ...DONE_TAGS]))
+    return null;
+  if (box && (hasAnyTag(line, DONE_TAGS) || !hasAnyTag(line, TASK_TAGS)))
+    return null;
+  if (!box && (hasAnyTag(line, TASK_TAGS) || !hasAnyTag(line, DONE_TAGS)))
+    return null;
+  return box ? renameTags(line, DONE_FORM) : renameTags(line, OPEN_FORM, true);
+}
+function kindTagForDetachedChild(line, heading) {
+  if (hasAnyTag(line, KIND_TAGS))
+    return null;
+  switch (taggedHeadingKind(heading)) {
+    case "task":
+      return boxState(line) === true ? "#todone" : "#todo";
+    case "idea":
+      return "#idea";
+    case "principle":
+      return "#principle";
+    default:
+      return null;
+  }
+}
+function readsAsDone(line) {
+  return isStruck(line) || boxState(line) === true || hasAnyTag(line, DONE_TAGS);
+}
+function priorityRank(line) {
+  const tags = lineTags(line);
+  if (tags.includes(FOCUS_TAG))
+    return 0;
+  for (let p = 0; p < PRIORITY_TAGS.length; p++)
+    if (tags.includes(PRIORITY_TAGS[p]))
+      return 1 + p;
+  if (tags.some((t) => tagRole(t) === "snooze"))
+    return 7;
+  return 6;
+}
+
+// src/mentions.ts
+var DAY_WORDS = /* @__PURE__ */ new Set(["today", "tomorrow", "yesterday"]);
+var isHandleChar = (ch) => /[\p{L}\p{N}_.-]/u.test(ch);
+function findMentions(line) {
+  const chars = Array.from(line);
+  const mask = codeSpanMask(line);
+  const offsets = [];
+  let offset = 0;
+  for (const ch of chars) {
+    offsets.push(offset);
+    offset += ch.length;
+  }
+  const mentions = [];
+  let i = 0;
+  while (i < chars.length) {
+    if (chars[i] !== "@" || mask[offsets[i]]) {
+      i++;
+      continue;
+    }
+    if (i > 0 && !/\s/u.test(chars[i - 1]) && chars[i - 1] !== "(") {
+      i++;
+      continue;
+    }
+    if (i + 1 >= chars.length || !/\p{L}/u.test(chars[i + 1])) {
+      i++;
+      continue;
+    }
+    let end = i + 1;
+    while (end < chars.length && !mask[offsets[end]] && isHandleChar(chars[end]))
+      end++;
+    while (end > i + 1 && (chars[end - 1] === "." || chars[end - 1] === "-"))
+      end--;
+    const handle = chars.slice(i + 1, end).join("");
+    if (!DAY_WORDS.has(handle.toLowerCase()))
+      mentions.push(handle);
+    i = end;
+  }
+  return mentions;
+}
+function isValidHandle(text) {
+  return findMentions(`@${text}`)[0] === text;
+}
+function taskLineHandles(content) {
+  const lines = content.split("\n");
+  const fenced = fencedLines(lines);
+  const handles = [];
+  let underTaskHeading = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (fenced[i])
+      continue;
+    const line = lines[i];
+    if (headingLevel(line))
+      underTaskHeading = taggedHeadingKind(line) === "task";
+    const ownsTask = hasAnyTag(line, TASK_TAGS) || hasAnyTag(line, DONE_TAGS);
+    const inSection = underTaskHeading && ownKind(line) === null;
+    if (ownsTask || inSection)
+      handles.push(...findMentions(line));
+  }
+  return handles;
+}
+function uniqueHandles(handles, exclude = []) {
+  const seen = new Set(Array.from(exclude, (h) => h.toLowerCase()));
+  const out = [];
+  for (const handle of handles) {
+    const key = handle.toLowerCase();
+    if (seen.has(key))
+      continue;
+    seen.add(key);
+    out.push(handle);
+  }
+  return out;
+}
+var TEAM_LINE = /^-\s+@([\w][\w.-]*)\s*(?:—|-)\s*(.+)$/;
+var ME_SUFFIX = /\s*\(me\)\s*$/i;
+function parseTeam(content) {
+  const members = [];
+  for (const line of content.split("\n")) {
+    const match = line.match(TEAM_LINE);
+    if (!match)
+      continue;
+    let name = match[2].trim();
+    const isMe = ME_SUFFIX.test(name);
+    if (isMe)
+      name = name.replace(ME_SUFFIX, "").trim();
+    members.push({ handle: match[1], name, isMe });
+  }
+  return members;
+}
+function appendTeamLines(content, handles) {
+  if (handles.length === 0)
+    return content;
+  const lines = handles.map((h) => `- @${h} \u2014 ${h}`).join("\n");
+  const head = content.trimEnd();
+  return (head ? head + "\n" : "") + lines + "\n";
+}
+
+// src/AtSuggest.ts
 var AtSuggest = class extends import_obsidian4.EditorSuggest {
   constructor(app, settings, teamManager) {
     super(app);
@@ -295,7 +637,8 @@ var AtSuggest = class extends import_obsidian4.EditorSuggest {
       }
     ];
   }
-  getUserOptions() {
+  /** `@me`, then team-note members, then handles seen on the vault's task lines. */
+  async getUserOptions() {
     var _a;
     const team = this.teamManager.getTeam();
     const options = [];
@@ -321,37 +664,55 @@ var AtSuggest = class extends import_obsidian4.EditorSuggest {
         handle: member.handle
       });
     }
+    for (const handle of await this.teamManager.getSeenHandles()) {
+      if (this.teamManager.isKnownHandle(handle))
+        continue;
+      options.push({
+        kind: "user",
+        id: handle,
+        label: `@${handle}`,
+        description: "Seen in tasks",
+        icon: "\u{1F464}",
+        handle
+      });
+    }
     return options;
   }
   onTrigger(cursor, editor, file) {
     const line = editor.getLine(cursor.line);
     const beforeCursor = line.substring(0, cursor.ch);
-    const match = beforeCursor.match(/@([\w.]*)$/);
+    const match = beforeCursor.match(/(?:^|[\s(])@([\p{L}\p{N}_.-]*)$/u);
     if (!match)
       return null;
-    const atIndex = beforeCursor.lastIndexOf("@");
-    if (atIndex > 0) {
-      const charBefore = beforeCursor[atIndex - 1];
-      if (/[a-zA-Z0-9]/.test(charBefore))
-        return null;
-    }
+    const atIndex = beforeCursor.length - match[1].length - 1;
     return {
       start: { line: cursor.line, ch: atIndex },
       end: cursor,
-      query: match[1].toLowerCase()
+      // Case kept, so "Add @handle to team" writes it as typed.
+      query: match[1]
     };
   }
-  getSuggestions(context) {
+  async getSuggestions(context) {
     const query = context.query.toLowerCase();
     const dateOptions = this.getDateOptions();
-    const userOptions = this.getUserOptions();
+    const userOptions = await this.getUserOptions();
     const all = [...dateOptions, ...userOptions];
     if (!query)
       return all;
-    return all.filter((opt) => {
-      const id = opt.id.toLowerCase();
-      return id.startsWith(query) || id.includes(query);
-    });
+    const matches = all.filter((opt) => opt.id.toLowerCase().includes(query));
+    const typed = context.query;
+    const isDateWord = dateOptions.some((opt) => opt.id === query);
+    if (isValidHandle(typed) && !isDateWord && !this.teamManager.isKnownHandle(typed)) {
+      matches.push({
+        kind: "add",
+        id: typed,
+        label: `Add @${typed} to team`,
+        description: "Writes it to the team note",
+        icon: "\u2795",
+        handle: typed
+      });
+    }
+    return matches;
   }
   renderSuggestion(item, el) {
     el.addClass("warped-todo-suggestion");
@@ -381,20 +742,30 @@ var AtSuggest = class extends import_obsidian4.EditorSuggest {
       const text = `@${item.handle} `;
       editor.replaceRange(text, start, end);
       editor.setCursor({ line: start.line, ch: start.ch + text.length });
+      if (item.kind === "add")
+        void this.addToTeam(item.handle);
+    }
+  }
+  async addToTeam(handle) {
+    try {
+      const added = await this.teamManager.addHandles([handle]);
+      if (added.length > 0)
+        showNotice2(`Added @${handle} to ${this.settings.teamFilePath}`);
+    } catch (e) {
+      showNotice2(`Couldn't add @${handle} to the team note: ${e instanceof Error ? e.message : e}`);
     }
   }
 };
 
 // src/TeamManager.ts
 var import_obsidian5 = require("obsidian");
-var TEAM_LINE_REGEX = /^-\s+@([\w][\w.-]*)\s*(?:—|-)\s*(.+)$/;
-var ME_SUFFIX = /\s*\(me\)\s*$/i;
+var TASK_TAG_NAMES = [...TASK_TAGS, ...DONE_TAGS];
 var TeamManager = class extends import_obsidian5.Events {
   constructor(app, filePath) {
     super();
     this.members = [];
-    this.pendingAdds = /* @__PURE__ */ new Set();
-    this.debouncedFlushAdds = (0, import_obsidian5.debounce)(() => this.flushPendingAdds(), 500, true);
+    /** Handles on the vault's task lines, gathered on first use this session. */
+    this.seenHandles = null;
     this.app = app;
     this.filePath = filePath;
   }
@@ -413,55 +784,70 @@ var TeamManager = class extends import_obsidian5.Events {
     const me = this.members.find((m) => m.isMe);
     return (_a = me == null ? void 0 : me.handle) != null ? _a : null;
   }
-  resolveHandle(raw) {
-    var _a, _b;
-    if (raw === "me") {
-      const meHandle = this.resolveMe();
-      if (!meHandle)
-        return null;
-      return (_a = this.members.find((m) => m.handle === meHandle)) != null ? _a : null;
-    }
-    return (_b = this.members.find((m) => m.handle === raw)) != null ? _b : null;
-  }
   isKnownHandle(handle) {
-    if (handle === "me")
+    const key = handle.toLowerCase();
+    if (key === "me")
       return true;
-    return this.members.some((m) => m.handle === handle);
+    return this.members.some((m) => m.handle.toLowerCase() === key);
   }
-  addMember(handle) {
-    if (this.isKnownHandle(handle))
-      return;
-    this.pendingAdds.add(handle);
-    this.debouncedFlushAdds();
+  /**
+   * Handles used on task lines across the vault, minus `@me`. Reads only
+   * files whose cached tags include a task tag. Cached for the session;
+   * `refresh` gathers again.
+   */
+  async getSeenHandles(refresh = false) {
+    var _a, _b;
+    if (this.seenHandles && !refresh)
+      return this.seenHandles;
+    const found = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const tags = (_b = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.tags) != null ? _b : [];
+      if (!tags.some((t) => TASK_TAG_NAMES.includes(t.tag.toLowerCase())))
+        continue;
+      found.push(...taskLineHandles(await this.app.vault.cachedRead(file)));
+    }
+    this.seenHandles = uniqueHandles(found, ["me"]);
+    return this.seenHandles;
   }
-  async flushPendingAdds() {
-    if (this.pendingAdds.size === 0)
-      return;
-    const handles = [...this.pendingAdds];
-    this.pendingAdds.clear();
+  /**
+   * Appends a line per handle not already in the team note, creating the
+   * note if there isn't one. Returns the handles actually added.
+   */
+  async addHandles(handles) {
     const file = this.app.vault.getAbstractFileByPath(this.filePath);
-    if (!(file instanceof import_obsidian5.TFile))
-      return;
-    const content = await this.app.vault.read(file);
-    const newLines = handles.filter((h) => !this.members.some((m) => m.handle === h)).map((h) => `- @${h} \u2014 ${h}`);
-    if (newLines.length === 0)
-      return;
-    const updated = content.trimEnd() + "\n" + newLines.join("\n") + "\n";
-    await this.app.vault.modify(file, updated);
+    if (!(file instanceof import_obsidian5.TFile)) {
+      const starter = this.starterContent();
+      const added2 = uniqueHandles(handles, ["me", ...parseTeam(starter).map((m) => m.handle)]);
+      if (added2.length === 0)
+        return [];
+      await this.app.vault.create(this.filePath, appendTeamLines(starter, added2));
+      await this.parse();
+      return added2;
+    }
+    let added = [];
+    await this.app.vault.process(file, (content) => {
+      added = uniqueHandles(handles, ["me", ...parseTeam(content).map((m) => m.handle)]);
+      return appendTeamLines(content, added);
+    });
+    if (added.length > 0)
+      await this.parse();
+    return added;
   }
   async createTeamFile() {
+    const file = await this.app.vault.create(this.filePath, this.starterContent());
+    await this.parse();
+    return file;
+  }
+  starterContent() {
     let username = "me";
     try {
       username = require("os").userInfo().username || "me";
     } catch (e) {
     }
-    const content = `# Team
+    return `# Team
 
 - @${username} \u2014 ${username} (me)
 `;
-    const file = await this.app.vault.create(this.filePath, content);
-    await this.parse();
-    return file;
   }
   watchFile() {
     this.app.vault.on("modify", (file) => {
@@ -483,27 +869,7 @@ var TeamManager = class extends import_obsidian5.Events {
   }
   async parse() {
     const file = this.app.vault.getAbstractFileByPath(this.filePath);
-    if (!(file instanceof import_obsidian5.TFile)) {
-      this.members = [];
-      this.trigger("team-updated");
-      return;
-    }
-    const content = await this.app.vault.read(file);
-    const lines = content.split("\n");
-    const members = [];
-    for (const line of lines) {
-      const match = line.match(TEAM_LINE_REGEX);
-      if (!match)
-        continue;
-      const handle = match[1];
-      let name = match[2].trim();
-      const isMe = ME_SUFFIX.test(name);
-      if (isMe) {
-        name = name.replace(ME_SUFFIX, "").trim();
-      }
-      members.push({ handle, name, isMe });
-    }
-    this.members = members;
+    this.members = file instanceof import_obsidian5.TFile ? parseTeam(await this.app.vault.read(file)) : [];
     this.trigger("team-updated");
   }
 };
@@ -944,250 +1310,6 @@ var TabLockManager = class {
 // src/HeaderSortExtension.ts
 var import_view = require("@codemirror/view");
 var import_state = require("@codemirror/state");
-
-// src/blocks.ts
-function headingLevel(line) {
-  const match = line.match(/^(#{1,6})\s+\S/);
-  return match ? match[1].length : 0;
-}
-var FENCE = /^\s*(```|~~~)/;
-function fencedLines(lines) {
-  const fenced = new Array(lines.length).fill(false);
-  let open = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (FENCE.test(lines[i])) {
-      fenced[i] = true;
-      open = !open;
-    } else {
-      fenced[i] = open;
-    }
-  }
-  return fenced;
-}
-function blockAtHeading(lines, headingLine, fenced = fencedLines(lines)) {
-  var _a;
-  if (fenced[headingLine])
-    return null;
-  const level = headingLevel((_a = lines[headingLine]) != null ? _a : "");
-  if (!level)
-    return null;
-  let end = headingLine + 1;
-  while (end < lines.length && (fenced[end] || !headingLevel(lines[end])))
-    end++;
-  while (end > headingLine + 1 && lines[end - 1].trim() === "")
-    end--;
-  return { headingLine, level, end };
-}
-function findBlock(lines, line, accept = () => true) {
-  if (line < 0 || line >= lines.length)
-    return null;
-  const fenced = fencedLines(lines);
-  for (let i = line; i >= 0; i--) {
-    if (fenced[i] || !headingLevel(lines[i]))
-      continue;
-    return accept(lines[i]) ? blockAtHeading(lines, i, fenced) : null;
-  }
-  return null;
-}
-var LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s/;
-function listIndent(line) {
-  const match = line.match(LIST_ITEM);
-  return match ? match[1].replace(/\t/g, "    ").length : -1;
-}
-function indentWidth(line) {
-  var _a, _b;
-  return ((_b = (_a = line.match(/^\s*/)) == null ? void 0 : _a[0]) != null ? _b : "").replace(/\t/g, "    ").length;
-}
-function listItemEnd(lines, line) {
-  var _a;
-  const indent = listIndent((_a = lines[line]) != null ? _a : "");
-  if (indent < 0)
-    return line + 1;
-  let end = line + 1;
-  while (end < lines.length && lines[end].trim() !== "" && indentWidth(lines[end]) > indent)
-    end++;
-  return end;
-}
-
-// src/tags.ts
-var TASK_TAGS = ["#todo", "#todos"];
-var DONE_TAGS = ["#todone", "#todones"];
-var IDEA_TAGS = ["#idea", "#ideas", "#ideation"];
-var PRINCIPLE_TAGS = ["#principle", "#principles"];
-var KIND_TAGS = [...TASK_TAGS, ...DONE_TAGS, ...IDEA_TAGS, ...PRINCIPLE_TAGS];
-var FOCUS_TAG = "#focus";
-var PRIORITY_TAGS = ["#p0", "#p1", "#p2", "#p3", "#p4"];
-var SNOOZE_TAG = "#snooze";
-var SNOOZE_TAGS = [SNOOZE_TAG, "#snoozed", "#future"];
-function tagRole(tag) {
-  const name = tag.toLowerCase();
-  if (TASK_TAGS.includes(name))
-    return "todo";
-  if (DONE_TAGS.includes(name))
-    return "todone";
-  if (IDEA_TAGS.includes(name))
-    return "idea";
-  if (PRINCIPLE_TAGS.includes(name))
-    return "principle";
-  if (name === FOCUS_TAG)
-    return "focus";
-  if (PRIORITY_TAGS.includes(name))
-    return "priority";
-  if (SNOOZE_TAGS.includes(name))
-    return "snooze";
-  return "category";
-}
-function codeSpanMask(line) {
-  const mask = new Array(line.length).fill(false);
-  const runLength = (from) => {
-    let end = from;
-    while (line[end] === "`")
-      end++;
-    return end - from;
-  };
-  let i = 0;
-  while (i < line.length) {
-    if (line[i] !== "`") {
-      i++;
-      continue;
-    }
-    const open = runLength(i);
-    let search = i + open;
-    let closed = false;
-    while (search < line.length) {
-      if (line[search] === "`") {
-        const run = runLength(search);
-        if (run === open) {
-          mask.fill(true, i, search + run);
-          i = search + run;
-          closed = true;
-          break;
-        }
-        search += run;
-      } else {
-        search++;
-      }
-    }
-    if (!closed)
-      i += open;
-  }
-  return mask;
-}
-var TAG = /#[\p{L}\p{N}_/-]+/gu;
-function findTags(line) {
-  const mask = codeSpanMask(line);
-  const tags = [];
-  for (const match of line.matchAll(TAG)) {
-    const from = match.index;
-    if (mask[from] || from > 0 && !/\s/.test(line[from - 1]))
-      continue;
-    if (/^#\d+$/.test(match[0]))
-      continue;
-    tags.push({ raw: match[0], name: match[0].toLowerCase(), from, to: from + match[0].length });
-  }
-  return tags;
-}
-function lineTags(line) {
-  return findTags(line).map((t) => t.name);
-}
-function hasAnyTag(line, tags) {
-  return lineTags(line).some((t) => tags.includes(t));
-}
-function ownKind(line) {
-  if (hasAnyTag(line, TASK_TAGS))
-    return "task";
-  if (hasAnyTag(line, IDEA_TAGS))
-    return "idea";
-  if (hasAnyTag(line, PRINCIPLE_TAGS))
-    return "principle";
-  return null;
-}
-function taggedHeadingKind(line) {
-  if (!headingLevel(line) || hasAnyTag(line, DONE_TAGS))
-    return null;
-  return ownKind(line);
-}
-function isTaggedHeading(line) {
-  return taggedHeadingKind(line) !== null;
-}
-function splice(line, from, to, insert) {
-  return line.slice(0, from) + insert + line.slice(to);
-}
-function inCaseOf(tag, to) {
-  const shouted = tag.raw === tag.raw.toUpperCase() && tag.raw !== tag.raw.toLowerCase();
-  return shouted ? to.toUpperCase() : to;
-}
-function renameTags(line, renames, dropStamp = false) {
-  const tags = findTags(line).filter((t) => t.name in renames);
-  for (const tag of tags.reverse()) {
-    let to = tag.to;
-    if (dropStamp) {
-      const stamp = line.slice(to).match(/^\s+@\d{4}-\d{2}-\d{2}(?![\w-])/);
-      if (stamp)
-        to += stamp[0].length;
-    }
-    line = splice(line, tag.from, to, inCaseOf(tag, renames[tag.name]));
-  }
-  return line;
-}
-function appendTag(line, tag) {
-  const end = line.trimEnd().length;
-  return splice(line, end, end, end === 0 ? tag : ` ${tag}`);
-}
-var BOX = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/;
-var BULLET = /^(\s*(?:[-*+]|\d+[.)])\s+)/;
-function boxState(line) {
-  const match = line.match(BOX);
-  return match ? match[2] !== " " : null;
-}
-function isStruck(line) {
-  const body = line.replace(BOX, "").replace(BULLET, "").trim();
-  return /^~~.+~~/.test(body);
-}
-var DONE_FORM = { "#todo": "#todone", "#todos": "#todones" };
-var OPEN_FORM = { "#todone": "#todo", "#todones": "#todos" };
-function syncCheckboxToggle(line, ctx = {}) {
-  const box = boxState(line);
-  if (box === null || isStruck(line))
-    return null;
-  if (hasAnyTag(line, [...IDEA_TAGS, ...PRINCIPLE_TAGS]))
-    return null;
-  if (ctx.headingKind && !hasAnyTag(line, [...TASK_TAGS, ...DONE_TAGS]))
-    return null;
-  if (box && (hasAnyTag(line, DONE_TAGS) || !hasAnyTag(line, TASK_TAGS)))
-    return null;
-  if (!box && (hasAnyTag(line, TASK_TAGS) || !hasAnyTag(line, DONE_TAGS)))
-    return null;
-  return box ? renameTags(line, DONE_FORM) : renameTags(line, OPEN_FORM, true);
-}
-function kindTagForDetachedChild(line, heading) {
-  if (hasAnyTag(line, KIND_TAGS))
-    return null;
-  switch (taggedHeadingKind(heading)) {
-    case "task":
-      return boxState(line) === true ? "#todone" : "#todo";
-    case "idea":
-      return "#idea";
-    case "principle":
-      return "#principle";
-    default:
-      return null;
-  }
-}
-function readsAsDone(line) {
-  return isStruck(line) || boxState(line) === true || hasAnyTag(line, DONE_TAGS);
-}
-function priorityRank(line) {
-  const tags = lineTags(line);
-  if (tags.includes(FOCUS_TAG))
-    return 0;
-  for (let p = 0; p < PRIORITY_TAGS.length; p++)
-    if (tags.includes(PRIORITY_TAGS[p]))
-      return 1 + p;
-  if (tags.some((t) => tagRole(t) === "snooze"))
-    return 7;
-  return 6;
-}
 
 // src/blockOps.ts
 function taggedBlockAt(lines, line) {
@@ -1812,6 +1934,11 @@ var WarpedTodoPlugin = class extends import_obsidian8.Plugin {
       }
     });
     this.addCommand({
+      id: "update-team-note",
+      name: "Update team note",
+      callback: () => void this.updateTeamNote()
+    });
+    this.addCommand({
       id: "sort-block-at-cursor",
       name: "Sort block at cursor",
       editorCallback: (editor) => sortBlockAtCursor(editor)
@@ -1844,6 +1971,18 @@ var WarpedTodoPlugin = class extends import_obsidian8.Plugin {
     var _a;
     (_a = this.titleLinkResolver) == null ? void 0 : _a.destroy();
     this.tabLockManager.destroy();
+  }
+  /** Appends the @handles used on the vault's task lines that the team note lacks. */
+  async updateTeamNote() {
+    const path = this.settings.teamFilePath;
+    try {
+      const added = await this.teamManager.addHandles(await this.teamManager.getSeenHandles(true));
+      showNotice2(
+        added.length > 0 ? `Added ${pluralize(added.length, "handle")} to ${path}: ${added.map((h) => `@${h}`).join(", ")}` : `${path} already lists every handle used in tasks.`
+      );
+    } catch (e) {
+      showNotice2(`Couldn't update ${path}: ${e instanceof Error ? e.message : e}`);
+    }
   }
   /**
    * Cuts the line or block at `line` and appends it to `target`: target
@@ -1993,7 +2132,7 @@ var WarpedTodoSettingTab = class extends import_obsidian8.PluginSettingTab {
       })
     );
     containerEl.createEl("h3", { text: "Team" });
-    new import_obsidian8.Setting(containerEl).setName("Team file path").setDesc("Path to the team definition file in your vault").addText(
+    new import_obsidian8.Setting(containerEl).setName("Team file path").setDesc(`Your @handle list, in a vault note. It's written only when you choose "Add @handle to team" or run Update team note.`).addText(
       (text) => text.setPlaceholder("team.md").setValue(this.plugin.settings.teamFilePath).onChange(async (value) => {
         this.plugin.settings.teamFilePath = value;
         this.plugin.teamManager.setFilePath(value);

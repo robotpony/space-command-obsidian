@@ -1,16 +1,22 @@
-import { App, TFile, Events, debounce } from "obsidian";
+import { App, TFile, Events } from "obsidian";
 import { TeamMember } from "./types";
+import { appendTeamLines, parseTeam, taskLineHandles, uniqueHandles } from "./mentions";
+import { DONE_TAGS, TASK_TAGS } from "./tags";
 
-const TEAM_LINE_REGEX = /^-\s+@([\w][\w.-]*)\s*(?:—|-)\s*(.+)$/;
-const ME_SUFFIX = /\s*\(me\)\s*$/i;
+const TASK_TAG_NAMES: readonly string[] = [...TASK_TAGS, ...DONE_TAGS];
 
+/**
+ * The team note (`team.md`, path in settings): read on load and whenever
+ * you edit it. It's written only on an explicit action, "Add @handle to
+ * team" in the `@` suggest list or the Update team note command, never in
+ * the background (PLAN.md › Phase 4).
+ */
 export class TeamManager extends Events {
   private app: App;
   private filePath: string;
   private members: TeamMember[] = [];
-  private pendingAdds: Set<string> = new Set();
-
-  private debouncedFlushAdds = debounce(() => this.flushPendingAdds(), 500, true);
+  /** Handles on the vault's task lines, gathered on first use this session. */
+  private seenHandles: string[] | null = null;
 
   constructor(app: App, filePath: string) {
     super();
@@ -36,56 +42,65 @@ export class TeamManager extends Events {
     return me?.handle ?? null;
   }
 
-  resolveHandle(raw: string): TeamMember | null {
-    if (raw === "me") {
-      const meHandle = this.resolveMe();
-      if (!meHandle) return null;
-      return this.members.find(m => m.handle === meHandle) ?? null;
-    }
-    return this.members.find(m => m.handle === raw) ?? null;
-  }
-
   isKnownHandle(handle: string): boolean {
-    if (handle === "me") return true;
-    return this.members.some(m => m.handle === handle);
+    const key = handle.toLowerCase();
+    if (key === "me") return true;
+    return this.members.some(m => m.handle.toLowerCase() === key);
   }
 
-  addMember(handle: string): void {
-    if (this.isKnownHandle(handle)) return;
-    this.pendingAdds.add(handle);
-    this.debouncedFlushAdds();
+  /**
+   * Handles used on task lines across the vault, minus `@me`. Reads only
+   * files whose cached tags include a task tag. Cached for the session;
+   * `refresh` gathers again.
+   */
+  async getSeenHandles(refresh = false): Promise<string[]> {
+    if (this.seenHandles && !refresh) return this.seenHandles;
+    const found: string[] = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const tags = this.app.metadataCache.getFileCache(file)?.tags ?? [];
+      if (!tags.some(t => TASK_TAG_NAMES.includes(t.tag.toLowerCase()))) continue;
+      found.push(...taskLineHandles(await this.app.vault.cachedRead(file)));
+    }
+    this.seenHandles = uniqueHandles(found, ["me"]);
+    return this.seenHandles;
   }
 
-  private async flushPendingAdds(): Promise<void> {
-    if (this.pendingAdds.size === 0) return;
-
-    const handles = [...this.pendingAdds];
-    this.pendingAdds.clear();
-
+  /**
+   * Appends a line per handle not already in the team note, creating the
+   * note if there isn't one. Returns the handles actually added.
+   */
+  async addHandles(handles: string[]): Promise<string[]> {
     const file = this.app.vault.getAbstractFileByPath(this.filePath);
-    if (!(file instanceof TFile)) return;
+    if (!(file instanceof TFile)) {
+      const starter = this.starterContent();
+      const added = uniqueHandles(handles, ["me", ...parseTeam(starter).map(m => m.handle)]);
+      if (added.length === 0) return [];
+      await this.app.vault.create(this.filePath, appendTeamLines(starter, added));
+      await this.parse();
+      return added;
+    }
 
-    const content = await this.app.vault.read(file);
-    const newLines = handles
-      .filter(h => !this.members.some(m => m.handle === h))
-      .map(h => `- @${h} — ${h}`);
-
-    if (newLines.length === 0) return;
-
-    const updated = content.trimEnd() + "\n" + newLines.join("\n") + "\n";
-    await this.app.vault.modify(file, updated);
+    let added: string[] = [];
+    await this.app.vault.process(file, (content) => {
+      added = uniqueHandles(handles, ["me", ...parseTeam(content).map(m => m.handle)]);
+      return appendTeamLines(content, added);
+    });
+    if (added.length > 0) await this.parse();
+    return added;
   }
 
   async createTeamFile(): Promise<TFile> {
+    const file = await this.app.vault.create(this.filePath, this.starterContent());
+    await this.parse();
+    return file;
+  }
+
+  private starterContent(): string {
     let username = "me";
     try {
       username = require("os").userInfo().username || "me";
     } catch { /* fallback */ }
-
-    const content = `# Team\n\n- @${username} — ${username} (me)\n`;
-    const file = await this.app.vault.create(this.filePath, content);
-    await this.parse();
-    return file;
+    return `# Team\n\n- @${username} — ${username} (me)\n`;
   }
 
   watchFile(): void {
@@ -109,31 +124,7 @@ export class TeamManager extends Events {
 
   private async parse(): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(this.filePath);
-    if (!(file instanceof TFile)) {
-      this.members = [];
-      this.trigger("team-updated");
-      return;
-    }
-
-    const content = await this.app.vault.read(file);
-    const lines = content.split("\n");
-    const members: TeamMember[] = [];
-
-    for (const line of lines) {
-      const match = line.match(TEAM_LINE_REGEX);
-      if (!match) continue;
-
-      const handle = match[1];
-      let name = match[2].trim();
-      const isMe = ME_SUFFIX.test(name);
-      if (isMe) {
-        name = name.replace(ME_SUFFIX, "").trim();
-      }
-
-      members.push({ handle, name, isMe });
-    }
-
-    this.members = members;
+    this.members = file instanceof TFile ? parseTeam(await this.app.vault.read(file)) : [];
     this.trigger("team-updated");
   }
 }

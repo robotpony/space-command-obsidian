@@ -6,7 +6,7 @@ All notable changes to the ␣⌘ Warped Command plugin will be documented in th
 
 Built on the `space-command` branch; see PLAN.md. Filled in phase by phase.
 Branch test builds carry their own 0.x numbers (Phase 1 is 0.56.0,
-Phase 2 is 0.57.0, Phase 3 is 0.57.1).
+Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0).
 
 ### Removed
 
@@ -31,6 +31,8 @@ Phase 2 is 0.57.0, Phase 3 is 0.57.1).
   from auto-tagging, Priority tags, every Projects and Posts setting,
   Focus Mode's queue limit and persistence, and Default assignee. Dropped
   keys fall out of `data.json` on the next save.
+- The background auto-add of unknown `@mentions` to the team note. It's
+  written only when you ask (see Added).
 - About 2,200 lines of sidebar CSS.
 
 ### Changed
@@ -77,6 +79,14 @@ Phase 2 is 0.57.0, Phase 3 is 0.57.1).
 ### Added
 
 - **Sort block at cursor** command, beside the header sort button.
+- **Update team note** command: appends the `@handle`s used on the
+  vault's task lines that the team note doesn't list yet.
+- **Add @handle to team** in the `@` suggest list, offered when the typed
+  handle isn't in the team note.
+- The `@` suggest list also offers handles seen on the vault's task lines,
+  after the team note's own, gathered on the first `@` of the session.
+  Mentions follow Space Command's rule: an `@` at line start, after a
+  space or after `(`, so emails and `@2026-10-17` aren't handles.
 
 ## [0.55.0] - 2026-10-15
 

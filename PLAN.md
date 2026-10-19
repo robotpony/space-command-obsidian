@@ -127,14 +127,16 @@ Expected size: about 75% of the TypeScript and most of the CSS.
 
 Bruce wants the handle list visible in the vault (question 4), so `team.md` stays, written only when you act.
 
-- [ ] Keep `TeamManager` reading `team.md` (path setting kept) and watching it for your own edits.
-- [ ] Remove the debounced background auto-add of unknown `@mentions` as you type (`flushPendingAdds`).
-- [ ] Handles reach `team.md` only on explicit action:
+**Done 2026-10-19 (0.58.0).** Mentions are read by `src/mentions.ts`, mirroring Space Command's `MentionExtractor.swift`: an `@` after `(` counts too, and handles are compared case-insensitively. "Task lines" are lines with an open or done task tag, plus the children of a tagged task heading. Default assignee had already gone in Phase 2.
+
+- [x] Keep `TeamManager` reading `team.md` (path setting kept) and watching it for your own edits.
+- [x] Remove the debounced background auto-add of unknown `@mentions` as you type (`flushPendingAdds`).
+- [x] Handles reach `team.md` only on explicit action:
   - choosing "Add @handle to team" from the `@` suggest list when the typed handle is new, and
   - an **Update team note** command that gathers the `@handle`s used on task lines across the vault (files whose `metadataCache` tags include a task tag), using Space Command's exclusion rule (not emails, `@YYYY-MM-DD`, `@today`/`@tomorrow`/`@yesterday`), and appends the missing ones.
-- [ ] `AtSuggest` offers `team.md`'s handles first, then handles seen in the vault's tasks this session (gathered in memory from `metadataCache` on first `@`, no scan at load, no writes).
-- [ ] Default assignee setting goes (it served the sidebar's assignee filter).
-- [ ] `@` date suggestions stay as-is, with the insert-date format setting.
+- [x] `AtSuggest` offers `team.md`'s handles first, then handles seen in the vault's tasks this session (gathered in memory from `metadataCache` on first `@`, no scan at load, no writes).
+- [x] Default assignee setting goes (it served the sidebar's assignee filter).
+- [x] `@` date suggestions stay as-is, with the insert-date format setting.
 - [ ] Space Command ignores `team.md`; it gathers handles from the tasks it indexes. The commander records this note as the helper's handle list.
 
 ## Phase 5: Tag and block helpers (new)
