@@ -398,12 +398,12 @@ function hasAnyTag(line, tags) {
   return lineTags(line).some((t) => tags.includes(t));
 }
 function ownKind(line) {
-  if (hasAnyTag(line, TASK_TAGS))
-    return "task";
   if (hasAnyTag(line, IDEA_TAGS))
     return "idea";
   if (hasAnyTag(line, PRINCIPLE_TAGS))
     return "principle";
+  if (hasAnyTag(line, TASK_TAGS))
+    return "task";
   return null;
 }
 function taggedHeadingKind(line) {

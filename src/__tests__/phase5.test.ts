@@ -171,3 +171,9 @@ describe("applying ops", () => {
     expect(applyOp(["- [ ] a #todo #p1"], [0], (l) => setPriority(l, 1))).toEqual({ changes: [], reason: "Already #p1." });
   });
 });
+
+describe("kind precedence", () => {
+  it("reads a line tagged #todo and #idea as an idea, so Mark done lets it go", () => {
+    expect(toggleDone(["- Try it #todo #idea"], [0]).changes).toEqual([{ line: 0, text: "- ~~Try it~~ #todo #idea" }]);
+  });
+});

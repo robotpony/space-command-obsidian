@@ -6,7 +6,7 @@ All notable changes to the ␣⌘ Warped Command plugin will be documented in th
 
 Built on the `space-command` branch; see PLAN.md. Filled in phase by phase.
 Branch test builds carry their own 0.x numbers (Phase 1 is 0.56.0,
-Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0).
+Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0; 0.59.1 is a fix).
 
 ### Removed
 
@@ -63,6 +63,9 @@ Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0).
   `a#b` and URL fragments aren't tags; `#123` is an issue number, not a
   tag; nested tags like `#area/sub` read whole; and tags in code spans
   of any backtick count are skipped. `#principles` reads as a principle.
+- A line tagged both `#todo` and `#idea` reads as an idea, as in Space
+  Command (idea over principle over task), so Mark done strikes it
+  through rather than renaming `#todo`.
 - Completion renames every `#todo` on the line and keeps the tag's case
   (`#TODO` → `#TODONE`).
 - `src/tags.ts` now holds the full vocabulary and every write rule the

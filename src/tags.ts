@@ -138,11 +138,15 @@ export function hasAnyTag(line: string, tags: readonly string[]): boolean {
   return lineTags(line).some((t) => tags.includes(t));
 }
 
-/** Kind named by the line's own open kind tag, if any (task over idea over principle). */
+/**
+ * Kind named by the line's own open kind tag, if any: idea over principle
+ * over task, as in TaggedLinesParser.kind(of:): a line tagged `#todo` and
+ * `#idea` is an idea not yet made a task.
+ */
 export function ownKind(line: string): ItemKind | null {
-  if (hasAnyTag(line, TASK_TAGS)) return "task";
   if (hasAnyTag(line, IDEA_TAGS)) return "idea";
   if (hasAnyTag(line, PRINCIPLE_TAGS)) return "principle";
+  if (hasAnyTag(line, TASK_TAGS)) return "task";
   return null;
 }
 
