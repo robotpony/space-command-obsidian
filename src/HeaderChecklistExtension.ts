@@ -1,16 +1,14 @@
 import { EditorView, keymap } from "@codemirror/view";
 import { Prec } from "@codemirror/state";
+import { taggedHeadingKind } from "./tags";
 
 /**
- * Check if a line is a header with #todo(s) or #idea(s) tag.
+ * Check if a line is a heading that opens a task or idea section
+ * (`#todo(s)`, `#idea(s)`, `#ideation`), by tags.ts's vocabulary.
  */
 function isTaggedHeader(lineText: string): boolean {
-  // Must be a markdown header (starts with #)
-  if (!/^#{1,6}\s+/.test(lineText)) {
-    return false;
-  }
-  // Must contain #todo, #todos, #idea, or #ideas tag
-  return /#(?:todos?|ideas?)\b/.test(lineText);
+  const kind = taggedHeadingKind(lineText);
+  return kind === "task" || kind === "idea";
 }
 
 /**

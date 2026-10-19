@@ -6,7 +6,7 @@ All notable changes to the ␣⌘ Warped Command plugin will be documented in th
 
 Built on the `space-command` branch; see PLAN.md. Filled in phase by phase.
 Branch test builds carry their own 0.x numbers (Phase 1 is 0.56.0,
-Phase 2 is 0.57.0).
+Phase 2 is 0.57.0, Phase 3 is 0.57.1).
 
 ### Removed
 
@@ -56,6 +56,23 @@ Phase 2 is 0.57.0).
 - Sections follow Space Command's rule: a heading at any level carrying
   an open kind tag starts one, a done heading doesn't, and the next
   heading of any level ends it (`src/blocks.ts`).
+- Tags are read Space Command's way (`src/tags.ts`, mirroring its
+  `TagExtractor`): a `#` at the start of a line or after a space, so
+  `a#b` and URL fragments aren't tags; `#123` is an issue number, not a
+  tag; nested tags like `#area/sub` read whole; and tags in code spans
+  of any backtick count are skipped. `#principles` reads as a principle.
+- Completion renames every `#todo` on the line and keeps the tag's case
+  (`#TODO` → `#TODONE`).
+- `src/tags.ts` now holds the full vocabulary and every write rule the
+  editor commands will use: Let Go for ideas and principles (a box is
+  checked; a line without one is struck through, tags left outside),
+  reopen (unchecks, renames back, unstrikes), set priority, focus,
+  snooze (always `#snooze`; unsnooze removes `#future` and `#snoozed`
+  too), make task from idea, and convert line to task. New tags go
+  before trailing whitespace, so a hard break stays one.
+- The header auto-checklist also triggers on `#ideation` headings, and
+  ignores tags in code spans.
+- The help note no longer says completion writes a date.
 
 ### Added
 

@@ -19,7 +19,7 @@ function buildHelpNoteContent(): string {
 
 ## Complete a task
 
-Click the checkbox. The plugin rewrites the line in place to \`#todone @<date>\`.
+Click the checkbox. The plugin rewrites the tag in place to \`#todone\`.
 
 - [ ] Try checking this box #todo
 

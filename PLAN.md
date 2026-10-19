@@ -115,11 +115,13 @@ Expected size: about 75% of the TypeScript and most of the CSS.
 
 `### Changed` in the 1.0.0 entry.
 
-- [ ] Completion follows "Space Command's write rules": no date, aliases kept (`#todos` → `#todones`), box inserted on a plain bullet, ideas/principles struck rather than retagged, headings with children refused. The "Completion date format" setting and its custom-format field go.
-- [ ] Nothing writes `#moved` or `#today`; `/today` and `/tomorrow` still insert *dates* (authoring help, no meaning to Space Command).
-- [ ] Anything that snoozes writes `#snooze`; `#future`/`#snoozed` are recognized (e.g. for styling), never renamed, and removed only by unsnooze.
-- [ ] Recognize the full vocabulary in one place (`src/tags.ts`, new): `#todo`/`#todos`, `#todone`/`#todones`, `#idea`/`#ideas`/`#ideation`, `#principle`, `#focus`, `#p0`–`#p4`, `#snooze` (+ `#future`, `#snoozed` read aliases). Anything else is a project/category tag. Code-fence and inline-backtick tags are never items. This module mirrors Space Command's `README.md` › Tags and is what Phase 5 builds on.
-- [ ] `HeaderChecklistExtension` auto-checklist triggers on the same tag set (today it's `#todo(s)`/`#idea(s)` only; add `#ideation`, agreed with the commander).
+**Done 2026-10-19 (0.57.1).** The write functions live in `src/tags.ts` for Phase 5's commands to call; nothing new is wired to the editor yet. Two points follow Space Command's code over this plan's wording: Let Go *checks* an idea's box when it has one (`Mutator.complete`) and strikes only a line without one, and reopen unstrikes a struck line. `#principles` reads as a principle, as in `Tag.swift`.
+
+- [x] Completion follows "Space Command's write rules": no date, aliases kept (`#todos` → `#todones`), box inserted on a plain bullet, ideas/principles struck rather than retagged, headings with children refused. The "Completion date format" setting and its custom-format field go.
+- [x] Nothing writes `#moved` or `#today`; `/today` and `/tomorrow` still insert *dates* (authoring help, no meaning to Space Command).
+- [x] Anything that snoozes writes `#snooze`; `#future`/`#snoozed` are recognized (e.g. for styling), never renamed, and removed only by unsnooze.
+- [x] Recognize the full vocabulary in one place (`src/tags.ts`, new): `#todo`/`#todos`, `#todone`/`#todones`, `#idea`/`#ideas`/`#ideation`, `#principle`, `#focus`, `#p0`–`#p4`, `#snooze` (+ `#future`, `#snoozed` read aliases). Anything else is a project/category tag. Code-fence and inline-backtick tags are never items. This module mirrors Space Command's `README.md` › Tags and is what Phase 5 builds on.
+- [x] `HeaderChecklistExtension` auto-checklist triggers on the same tag set (today it's `#todo(s)`/`#idea(s)` only; add `#ideation`, agreed with the commander).
 
 ## Phase 4: Handles in a visible team note
 

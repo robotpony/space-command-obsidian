@@ -520,7 +520,7 @@ function buildHelpNoteContent() {
 
 ## Complete a task
 
-Click the checkbox. The plugin rewrites the line in place to \`#todone @<date>\`.
+Click the checkbox. The plugin rewrites the tag in place to \`#todone\`.
 
 - [ ] Try checking this box #todo
 
@@ -1013,16 +1013,82 @@ function listItemEnd(lines, line) {
 var TASK_TAGS = ["#todo", "#todos"];
 var DONE_TAGS = ["#todone", "#todones"];
 var IDEA_TAGS = ["#idea", "#ideas", "#ideation"];
-var PRINCIPLE_TAGS = ["#principle"];
+var PRINCIPLE_TAGS = ["#principle", "#principles"];
 var KIND_TAGS = [...TASK_TAGS, ...DONE_TAGS, ...IDEA_TAGS, ...PRINCIPLE_TAGS];
-function splitCode(line) {
-  return line.split(/(`[^`]*`)/);
+var FOCUS_TAG = "#focus";
+var PRIORITY_TAGS = ["#p0", "#p1", "#p2", "#p3", "#p4"];
+var SNOOZE_TAG = "#snooze";
+var SNOOZE_TAGS = [SNOOZE_TAG, "#snoozed", "#future"];
+function tagRole(tag) {
+  const name = tag.toLowerCase();
+  if (TASK_TAGS.includes(name))
+    return "todo";
+  if (DONE_TAGS.includes(name))
+    return "todone";
+  if (IDEA_TAGS.includes(name))
+    return "idea";
+  if (PRINCIPLE_TAGS.includes(name))
+    return "principle";
+  if (name === FOCUS_TAG)
+    return "focus";
+  if (PRIORITY_TAGS.includes(name))
+    return "priority";
+  if (SNOOZE_TAGS.includes(name))
+    return "snooze";
+  return "category";
+}
+function codeSpanMask(line) {
+  const mask = new Array(line.length).fill(false);
+  const runLength = (from) => {
+    let end = from;
+    while (line[end] === "`")
+      end++;
+    return end - from;
+  };
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] !== "`") {
+      i++;
+      continue;
+    }
+    const open = runLength(i);
+    let search = i + open;
+    let closed = false;
+    while (search < line.length) {
+      if (line[search] === "`") {
+        const run = runLength(search);
+        if (run === open) {
+          mask.fill(true, i, search + run);
+          i = search + run;
+          closed = true;
+          break;
+        }
+        search += run;
+      } else {
+        search++;
+      }
+    }
+    if (!closed)
+      i += open;
+  }
+  return mask;
+}
+var TAG = /#[\p{L}\p{N}_/-]+/gu;
+function findTags(line) {
+  const mask = codeSpanMask(line);
+  const tags = [];
+  for (const match of line.matchAll(TAG)) {
+    const from = match.index;
+    if (mask[from] || from > 0 && !/\s/.test(line[from - 1]))
+      continue;
+    if (/^#\d+$/.test(match[0]))
+      continue;
+    tags.push({ raw: match[0], name: match[0].toLowerCase(), from, to: from + match[0].length });
+  }
+  return tags;
 }
 function lineTags(line) {
-  return splitCode(line).filter((_, i) => i % 2 === 0).flatMap((part) => {
-    var _a;
-    return (_a = part.match(/#[\w-]+/g)) != null ? _a : [];
-  }).map((t) => t.toLowerCase());
+  return findTags(line).map((t) => t.name);
 }
 function hasAnyTag(line, tags) {
   return lineTags(line).some((t) => tags.includes(t));
@@ -1044,17 +1110,29 @@ function taggedHeadingKind(line) {
 function isTaggedHeading(line) {
   return taggedHeadingKind(line) !== null;
 }
-function renameTag(line, from, to, dropStamp = false) {
-  const stamp = dropStamp ? String.raw`(?:\s+@\d{4}-\d{2}-\d{2})?` : "";
-  const re = new RegExp(`${from}(?![\\w-])${stamp}`, "i");
-  const parts = splitCode(line);
-  for (let i = 0; i < parts.length; i += 2) {
-    if (re.test(parts[i])) {
-      parts[i] = parts[i].replace(re, to);
-      return parts.join("");
+function splice(line, from, to, insert) {
+  return line.slice(0, from) + insert + line.slice(to);
+}
+function inCaseOf(tag, to) {
+  const shouted = tag.raw === tag.raw.toUpperCase() && tag.raw !== tag.raw.toLowerCase();
+  return shouted ? to.toUpperCase() : to;
+}
+function renameTags(line, renames, dropStamp = false) {
+  const tags = findTags(line).filter((t) => t.name in renames);
+  for (const tag of tags.reverse()) {
+    let to = tag.to;
+    if (dropStamp) {
+      const stamp = line.slice(to).match(/^\s+@\d{4}-\d{2}-\d{2}(?![\w-])/);
+      if (stamp)
+        to += stamp[0].length;
     }
+    line = splice(line, tag.from, to, inCaseOf(tag, renames[tag.name]));
   }
   return line;
+}
+function appendTag(line, tag) {
+  const end = line.trimEnd().length;
+  return splice(line, end, end, end === 0 ? tag : ` ${tag}`);
 }
 var BOX = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/;
 var BULLET = /^(\s*(?:[-*+]|\d+[.)])\s+)/;
@@ -1066,20 +1144,8 @@ function isStruck(line) {
   const body = line.replace(BOX, "").replace(BULLET, "").trim();
   return /^~~.+~~/.test(body);
 }
-function doneFormOf(line) {
-  if (hasAnyTag(line, ["#todos"]))
-    return ["#todos", "#todones"];
-  if (hasAnyTag(line, ["#todo"]))
-    return ["#todo", "#todone"];
-  return null;
-}
-function openFormOf(line) {
-  if (hasAnyTag(line, ["#todones"]))
-    return ["#todones", "#todos"];
-  if (hasAnyTag(line, ["#todone"]))
-    return ["#todone", "#todo"];
-  return null;
-}
+var DONE_FORM = { "#todo": "#todone", "#todos": "#todones" };
+var OPEN_FORM = { "#todone": "#todo", "#todones": "#todos" };
 function syncCheckboxToggle(line, ctx = {}) {
   const box = boxState(line);
   if (box === null || isStruck(line))
@@ -1088,14 +1154,11 @@ function syncCheckboxToggle(line, ctx = {}) {
     return null;
   if (ctx.headingKind && !hasAnyTag(line, [...TASK_TAGS, ...DONE_TAGS]))
     return null;
-  const rename = box ? doneFormOf(line) : openFormOf(line);
-  if (!rename)
+  if (box && (hasAnyTag(line, DONE_TAGS) || !hasAnyTag(line, TASK_TAGS)))
     return null;
-  if (box && hasAnyTag(line, DONE_TAGS))
+  if (!box && (hasAnyTag(line, TASK_TAGS) || !hasAnyTag(line, DONE_TAGS)))
     return null;
-  if (!box && hasAnyTag(line, TASK_TAGS))
-    return null;
-  return renameTag(line, ...rename, !box);
+  return box ? renameTags(line, DONE_FORM) : renameTags(line, OPEN_FORM, true);
 }
 function kindTagForDetachedChild(line, heading) {
   if (hasAnyTag(line, KIND_TAGS))
@@ -1111,20 +1174,17 @@ function kindTagForDetachedChild(line, heading) {
       return null;
   }
 }
-function appendTag(line, tag) {
-  return `${line.trimEnd()} ${tag}`;
-}
 function readsAsDone(line) {
   return isStruck(line) || boxState(line) === true || hasAnyTag(line, DONE_TAGS);
 }
 function priorityRank(line) {
   const tags = lineTags(line);
-  if (tags.includes("#focus"))
+  if (tags.includes(FOCUS_TAG))
     return 0;
-  for (let p = 0; p <= 4; p++)
-    if (tags.includes(`#p${p}`))
+  for (let p = 0; p < PRIORITY_TAGS.length; p++)
+    if (tags.includes(PRIORITY_TAGS[p]))
       return 1 + p;
-  if (tags.some((t) => t === "#snooze" || t === "#snoozed" || t === "#future"))
+  if (tags.some((t) => tagRole(t) === "snooze"))
     return 7;
   return 6;
 }
@@ -1389,10 +1449,8 @@ function createCheckboxSyncExtension() {
 var import_view2 = require("@codemirror/view");
 var import_state3 = require("@codemirror/state");
 function isTaggedHeader(lineText) {
-  if (!/^#{1,6}\s+/.test(lineText)) {
-    return false;
-  }
-  return /#(?:todos?|ideas?)\b/.test(lineText);
+  const kind = taggedHeadingKind(lineText);
+  return kind === "task" || kind === "idea";
 }
 function isNextLineEmpty(view, currentLineNumber) {
   const doc = view.state.doc;

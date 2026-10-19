@@ -1,7 +1,19 @@
 import { describe, it, expect } from "vitest";
 import {
   completeTaskLine,
-  reopenTaskLine,
+  completeLine,
+  letGoLine,
+  reopenLine,
+  setPriority,
+  toggleFocus,
+  snoozeLine,
+  unsnoozeLine,
+  toggleSnooze,
+  makeTaskFromIdea,
+  convertLineToTask,
+  appendTag,
+  findTags,
+  tagRole,
   syncCheckboxToggle,
   kindTagForDetachedChild,
   taggedHeadingKind,
@@ -66,31 +78,41 @@ describe("completeTaskLine", () => {
 
   it("doesn't match #todo inside #todos or other tags", () => {
     expect(completeTaskLine("- [ ] x #todo-later").ok).toBe(false);
+    expect(completeTaskLine("- [ ] x #todo/sub").ok).toBe(false);
+  });
+
+  it("keeps the tag's case", () => {
+    expect(completeTaskLine("- [ ] Loud #TODO")).toEqual({ ok: true, line: "- [x] Loud #TODONE" });
   });
 });
 
-describe("reopenTaskLine", () => {
+describe("reopenLine", () => {
   it("renames #todone back and unchecks", () => {
-    expect(reopenTaskLine("- [x] Ship #todone #p1")).toEqual({ ok: true, line: "- [ ] Ship #todo #p1" });
+    expect(reopenLine("- [x] Ship #todone #p1")).toEqual({ ok: true, line: "- [ ] Ship #todo #p1" });
   });
 
   it("keeps the alias form: #todones → #todos", () => {
-    expect(reopenTaskLine("## Tasks #todones")).toEqual({ ok: true, line: "## Tasks #todos" });
+    expect(reopenLine("## Tasks #todones")).toEqual({ ok: true, line: "## Tasks #todos" });
   });
 
   it("drops a legacy @date directly after #todone, and only that one", () => {
-    expect(reopenTaskLine("- [x] Ship #todone @2026-05-08 #p1 @2026-06-01")).toEqual({
+    expect(reopenLine("- [x] Ship #todone @2026-05-08 #p1 @2026-06-01")).toEqual({
       ok: true,
       line: "- [ ] Ship #todo #p1 @2026-06-01",
     });
   });
 
   it("under a tagged heading unchecks only", () => {
-    expect(reopenTaskLine("- [x] Child", { headingKind: "task" })).toEqual({ ok: true, line: "- [ ] Child" });
+    expect(reopenLine("- [x] Child")).toEqual({ ok: true, line: "- [ ] Child" });
   });
 
-  it("leaves a struck line alone", () => {
-    expect(reopenTaskLine("- [x] ~~Gone~~ #todone").ok).toBe(false);
+  it("unstrikes a struck line along with the box and tag", () => {
+    expect(reopenLine("- [x] ~~Gone~~ #todone")).toEqual({ ok: true, line: "- [ ] Gone #todo" });
+    expect(reopenLine("- ~~Let go~~ #idea")).toEqual({ ok: true, line: "- Let go #idea" });
+  });
+
+  it("refuses an open line", () => {
+    expect(reopenLine("- [ ] Open #todo").ok).toBe(false);
   });
 });
 
@@ -194,5 +216,147 @@ describe("readsAsDone / isStruck / priorityRank", () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(new Set(order).size).toBe(order.length);
     expect(priorityRank("x #future")).toBe(priorityRank("x #snoozed"));
+  });
+});
+
+describe("findTags", () => {
+  it("needs whitespace or line start before the #", () => {
+    expect(findTags("a#b #c http://x.ca/#frag").map((t) => t.raw)).toEqual(["#c"]);
+  });
+
+  it("skips issue numbers and code spans of any length", () => {
+    expect(findTags("fix #123 ``#todo `x` `` #todo").map((t) => t.raw)).toEqual(["#todo"]);
+  });
+
+  it("reads nested tags whole", () => {
+    expect(findTags("#area/sub-1").map((t) => t.name)).toEqual(["#area/sub-1"]);
+  });
+});
+
+describe("tagRole", () => {
+  it("knows the vocabulary and its read aliases", () => {
+    expect(["#todos", "#TODONES", "#ideation", "#principles", "#focus", "#p3", "#future", "#snoozed"].map(tagRole))
+      .toEqual(["todo", "todone", "idea", "principle", "focus", "priority", "snooze", "snooze"]);
+  });
+
+  it("treats everything else as a project/category tag", () => {
+    expect(tagRole("#p5")).toBe("category");
+    expect(tagRole("#space-command")).toBe("category");
+  });
+});
+
+describe("letGoLine / completeLine", () => {
+  it("strikes an idea with no box, tags left outside", () => {
+    expect(letGoLine("- Lighter onboarding #idea #ux")).toEqual({ ok: true, line: "- ~~Lighter onboarding~~ #idea #ux" });
+    expect(letGoLine("Keep it small #principle")).toEqual({ ok: true, line: "~~Keep it small~~ #principle" });
+  });
+
+  it("checks an idea's box rather than striking it", () => {
+    expect(letGoLine("- [ ] Thought #idea")).toEqual({ ok: true, line: "- [x] Thought #idea" });
+  });
+
+  it("refuses a done idea and one with no text", () => {
+    expect(letGoLine("- ~~Gone~~ #idea").ok).toBe(false);
+    expect(letGoLine("- #idea").ok).toBe(false);
+  });
+
+  it("dispatches by kind, a child's own tag over the heading's", () => {
+    expect(completeLine("- [ ] Ship #todo")).toEqual({ ok: true, line: "- [x] Ship #todone" });
+    expect(completeLine("- Thought #ideas")).toEqual({ ok: true, line: "- ~~Thought~~ #ideas" });
+    expect(completeLine("- Child", { headingKind: "idea" })).toEqual({ ok: true, line: "- ~~Child~~" });
+    expect(completeLine("- Child #todo", { headingKind: "idea" })).toEqual({ ok: true, line: "- [x] Child #todone" });
+    expect(completeLine("- Child", { headingKind: "task" })).toEqual({ ok: true, line: "- [x] Child" });
+  });
+
+  it("never strikes a task", () => {
+    const result = completeLine("- Plain #todo");
+    expect(result.ok && result.line).not.toMatch(/~~/);
+  });
+
+  it("refuses a tagged heading with children", () => {
+    expect(completeLine("### Ideas #ideas", { headingHasChildren: true }).ok).toBe(false);
+  });
+});
+
+describe("setPriority", () => {
+  it("appends when there's none", () => {
+    expect(setPriority("- [ ] x #todo", 1)).toEqual({ ok: true, line: "- [ ] x #todo #p1" });
+  });
+
+  it("replaces the first in place and drops the rest", () => {
+    expect(setPriority("- [ ] x #p3 #todo #p1 #ux", 0)).toEqual({ ok: true, line: "- [ ] x #p0 #todo #ux" });
+  });
+
+  it("refuses the same priority", () => {
+    expect(setPriority("- x #p2", 2).ok).toBe(false);
+  });
+
+  it("none removes them all, refusing when there are none", () => {
+    expect(setPriority("- x #p1 #todo #p2", null)).toEqual({ ok: true, line: "- x #todo" });
+    expect(setPriority("- x #todo", null).ok).toBe(false);
+  });
+});
+
+describe("focus and snooze", () => {
+  it("toggles #focus at the end of the line", () => {
+    expect(toggleFocus("- x #todo")).toEqual({ ok: true, line: "- x #todo #focus" });
+    expect(toggleFocus("- x #focus #todo")).toEqual({ ok: true, line: "- x #todo" });
+  });
+
+  it("snooze writes #snooze, never the read aliases", () => {
+    expect(snoozeLine("- x #todo")).toEqual({ ok: true, line: "- x #todo #snooze" });
+    expect(snoozeLine("- x #future").ok).toBe(false);
+  });
+
+  it("unsnooze removes every snooze tag, #future and #snoozed included", () => {
+    expect(unsnoozeLine("- x #future #todo #snoozed #snooze")).toEqual({ ok: true, line: "- x #todo" });
+    expect(unsnoozeLine("- x #todo").ok).toBe(false);
+    expect(toggleSnooze("- x #future")).toEqual({ ok: true, line: "- x" });
+  });
+
+  it("leaves tags in code spans alone", () => {
+    expect(unsnoozeLine("- `#snooze` is a tag #snooze")).toEqual({ ok: true, line: "- `#snooze` is a tag" });
+  });
+});
+
+describe("appendTag", () => {
+  it("keeps trailing whitespace (a hard break) after the new tag", () => {
+    expect(appendTag("- x #todo  ", "#p1")).toBe("- x #todo #p1  ");
+    expect(appendTag("", "#todo")).toBe("#todo");
+  });
+});
+
+describe("makeTaskFromIdea", () => {
+  it("renames idea tags in place, keeping the alias form", () => {
+    expect(makeTaskFromIdea("- [ ] x #idea #ux")).toEqual({ ok: true, line: "- [ ] x #todo #ux" });
+    expect(makeTaskFromIdea("## Ideas #ideas")).toEqual({ ok: true, line: "## Ideas #todos" });
+    expect(makeTaskFromIdea("- x #ideation")).toEqual({ ok: true, line: "- x #todo" });
+  });
+
+  it("an untagged child of an idea heading gains #todo", () => {
+    expect(makeTaskFromIdea("- x", { headingKind: "idea" })).toEqual({ ok: true, line: "- x #todo" });
+  });
+
+  it("refuses a non-idea", () => {
+    expect(makeTaskFromIdea("- x #todo").ok).toBe(false);
+  });
+});
+
+describe("convertLineToTask", () => {
+  it("makes `- [ ] text #todo` from a bullet or plain line", () => {
+    expect(convertLineToTask("- Call Sam")).toEqual({ ok: true, line: "- [ ] Call Sam #todo" });
+    expect(convertLineToTask("  Call Sam")).toEqual({ ok: true, line: "  - [ ] Call Sam #todo" });
+    expect(convertLineToTask("- [ ] Boxed")).toEqual({ ok: true, line: "- [ ] Boxed #todo" });
+  });
+
+  it("under a tagged task heading, writes a plain box", () => {
+    expect(convertLineToTask("- Call Sam", { headingKind: "task" })).toEqual({ ok: true, line: "- [ ] Call Sam" });
+    expect(convertLineToTask("- [ ] Boxed", { headingKind: "task" }).ok).toBe(false);
+  });
+
+  it("refuses items, headings and blank lines", () => {
+    expect(convertLineToTask("- x #idea").ok).toBe(false);
+    expect(convertLineToTask("## Heading").ok).toBe(false);
+    expect(convertLineToTask("  ").ok).toBe(false);
   });
 });
