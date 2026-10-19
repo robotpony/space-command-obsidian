@@ -184,6 +184,7 @@ You said docs come after the code. This phase is where the rebrand lands in one 
 - [ ] Notice/branding in `src/shared/ui`: keep `␣⌘`, rename CSS prefixes as part of the styles purge.
 - [ ] Release zip (`main.js`, `manifest.json`, `styles.css`) with one-step-per-line install instructions; a page and link on space-command.ca (Space Command side).
 - [ ] Merge `space-command` into `main`; push only when Bruce asks.
+- [ ] (Bruce, after testing) Move or merge this GitHub repo. Leaning towards merging it into the space-command repo rather than renaming it in place; decided once 1.0.0 is tested.
 - [ ] Hand the result back to the commander so obsidian-command.md and Space Command's PLAN.md get ticked.
 
 ## What stays, at a glance
