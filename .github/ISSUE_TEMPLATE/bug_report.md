@@ -22,13 +22,12 @@ What you expected to happen instead.
 If applicable, add screenshots to help explain the problem.
 
 **Environment**
-- Plugin version (`manifest.json`, or Settings → Community plugins → Warped Command): 
+- Plugin version (`manifest.json`, or Settings → Community plugins → Space Command for Obsidian): 
 - Obsidian version (Settings → About): 
 - OS: 
 
-**If this involves the Projects tab**
-- Output of `git --version`: 
-- Is the affected repo a submodule, or nested inside another git repo? 
+**If this involves switching to or from Space Command**
+- Space Command version: 
 
 **Additional context**
 Anything else that seems relevant (vault size, other plugins that might interact, console errors from the developer tools).

@@ -11,7 +11,7 @@ npm run build        # production build (tsc -noEmit + esbuild)
 npm test             # run vitest test suite
 ```
 
-Build output is `main.js` at the repo root. To test in Obsidian, copy `main.js`, `manifest.json`, and `styles.css` to `<vault>/.obsidian/plugins/warped-todo/` (the plugin's `id` — unchanged even though the repo, package, and display name are now "Warped Command"). `./install.sh` automates this:
+Build output is `main.js` at the repo root. To test in Obsidian, copy `main.js`, `manifest.json`, and `styles.css` to `<vault>/.obsidian/plugins/space-command/` (the plugin's `id`; it was `warped-todo` before 1.0.0). `./install.sh` automates this, and also removes a leftover `warped-todo` folder and swaps its id in `community-plugins.json`:
 
 ```bash
 ./install.sh           # interactive: pick vaults, build, and install
@@ -23,77 +23,62 @@ Vault selections are cached in `.install-vaults` for reuse with `--previous`.
 
 ## Architecture
 
-Warped Command is an Obsidian plugin for tracking TODOs, Ideas, and Principles across a vault, plus a Projects tab that syncs vault notes with git repos on disk. Vault items are tagged in markdown files (`#todo`, `#idea`, `#principle`); the plugin scans the vault, indexes them, and surfaces them in a custom sidebar with priority/focus/snooze workflows. The sidebar's Projects tab finds git repos under a configured base folder, syncs a note per project (frontmatter git facts + `#todo`/`#idea`/`#bug` items parsed from each repo's `BUGS.md`/`TODO.md`/etc.), and lets you act on those items from Obsidian, writing back to the repo file. Repo-matched projects with tracked items also surface as collapsible blocks directly in the TODOs/Ideas tabs, interleaved with vault items by priority. A fourth sidebar tab, Posts, is deliberately independent of the Projects tab and its scan: it assumes the Hugo site, if there is one, *is* the current vault, checking only the vault's own root for a `hugo.toml`/`config.yaml`/etc. — never a repo found elsewhere — and lists its content grouped by section, defaulting to a Drafts filter, with "new post from archetype" — read/navigate only, no draft-toggle mutation. Desktop only (`isDesktopOnly: true`) — Projects and Posts need Node `fs`/`child_process`. Full Projects design, and the Hugo Posts section: [DESIGN.md](DESIGN.md).
+␣⌘ Space Command for Obsidian is an in-editor authoring companion for [Space Command](https://space-command.ca), the Mac app that finds, tracks and writes back `#todo`/`#idea`/`#principle` items across a vault. This plugin helps you *write* those lines: tag, date and handle suggestions, checkbox ↔ tag sync, tag commands, block features under tagged headings, moving lines between notes, and switching to and from Space Command at a line. It was Warped Command (sidebar, vault scanner, Projects, Posts) until 1.0.0, which cut all of that; see `CHANGELOG.md` and `CHANGELOG-ARCHIVE.md`.
+
+It doesn't scan the vault, keep an index, or write in the background. Every write answers an editor action and goes through an editor transaction, and every tag write follows Space Command's rules, kept in one module (`src/tags.ts`). Design and the full write rules: [DESIGN.md](DESIGN.md). Desktop only (`isDesktopOnly: true`): switching apps needs the vault's path on disk and Electron's `shell`.
 
 ### Entry point
 
 [main.ts](main.ts) extends Obsidian's `Plugin`. On load it:
 
-- Initializes `TodoScanner` (vault scan + file watchers)
-- Wires `TodoProcessor` for completion/priority mutations
-- Builds `ProjectManager` for tag-based grouping, merged with repo-derived data
-- Builds `ProjectScanner`/`ProjectSyncManager` and starts the Projects file watcher (if a base folder is configured)
-- Registers the sidebar view (TODOs/Ideas/Projects/Posts tabs in one `ItemView`)
-- Registers `SlashCommandSuggest` (`/todo`, `/idea`, etc.) and `AtSuggest` (`@today`, `@handle`)
-- Registers CodeMirror extensions for header sort and checkbox/tag sync
-- Registers commands and the settings tab
+- Loads settings and the team note (`TeamManager`), and creates the help note and tab lock managers
+- Registers CodeMirror extensions: header sort and progress, header checklist, checkbox ↔ tag sync
+- Registers the `/`, `@` and `#` editor suggesters
+- Registers the tag commands and their editor-menu items (`TagCommands.ts`), and Open in Space Command plus the `obsidian://space-command` handler (`AppSwitch.ts`)
+- Registers Quick Add TODO, Move TODO to another file, Update team note and Sort block at cursor
+- Sets up title-based wiki links for a Hugo vault, and the settings tab
 
 ### Source files (`src/`)
 
 | File | Purpose |
 |------|---------|
-| [TodoScanner.ts](src/TodoScanner.ts) | Scans vault for `#todo`/`#todone`/`#idea`/`#principle`. Maintains per-file caches, watches file changes, emits `todos-updated` events. |
-| [TodoProcessor.ts](src/TodoProcessor.ts) | Mutations: complete TODO (`#todo` → `#todone @date`, in place), change priority, snooze, move file. |
-| [ProjectManager.ts](src/ProjectManager.ts) | Aggregates items by project tag (excludes `#focus`/priority/lifecycle tags). Reads project description from project files. |
-| [SidebarView.ts](src/SidebarView.ts) | Custom `ItemView` with TODOs / Ideas / Projects / Posts tabs, tag cloud, immersive Focus Mode, summary stats. Repo-matched projects with synced items render as collapsible blocks interleaved into the TODOs/Ideas active lists by priority (`renderProjectBlockItem`/`compareSortableEntries`), not just in the Projects tab's own detail view. Snoozed items are an ordinary tag (no dedicated tab), excluded only from the Focus Mode queue. The Posts tab lists a Hugo site's content grouped by section, drafts-filtered by default; see `HugoScanner.ts`. |
-| [ContextMenuHandler.ts](src/ContextMenuHandler.ts) | Right-click menu on sidebar rows: priority, focus, snooze, move, copy, delete. |
-| [SlashCommandSuggest.ts](src/SlashCommandSuggest.ts) | Editor suggester for `/` at column 0: `/todo`, `/todos`, `/idea`, `/ideas`, `/today`, `/tomorrow`, `/callout`. |
-| [AtSuggest.ts](src/AtSuggest.ts) | Editor suggester for `@`: dates (`@today`, `@tomorrow`, `@yesterday`, `@<date>`) and team mentions (`@<handle>`). |
-| [TeamManager.ts](src/TeamManager.ts) | Parses `team.md`, watches for changes, resolves handles, auto-adds unknown mentions. |
-| [HelpNoteManager.ts](src/HelpNoteManager.ts) | Creates and opens `Warped Command Help.md` on first install only; Settings → Help recreates it on demand. Never rewrites an existing note. |
-| [MoveTargetModal.ts](src/MoveTargetModal.ts) | File picker for moving a TODO/idea to a different note. |
-| [TabLockManager.ts](src/TabLockManager.ts) | Adds lock buttons to tab headers. Locked tabs open links in new tabs instead of replacing content. |
-| [HeaderSortExtension.ts](src/HeaderSortExtension.ts) | CodeMirror extension that sorts header TODO children by priority. |
-| [HeaderChecklistExtension.ts](src/HeaderChecklistExtension.ts) | CodeMirror extension syncing markdown checkbox state with `#todo`/`#todone` tags. |
-| [SlackConverter.ts](src/SlackConverter.ts) | Converts markdown → Slack mrkdwn for clipboard copy. |
-| [NotionConverter.ts](src/NotionConverter.ts) | Converts Obsidian markdown → plain markdown for Notion paste. |
-| [types.ts](src/types.ts) | `TodoItem`, `ProjectInfo`, `WarpedTodoSettings`, `DEFAULT_SETTINGS`, `HugoSite`, `HugoPost`. |
-| [utils.ts](src/utils.ts) | Shared helpers: tag extraction, date formatting, priority math, checkbox parsing, `modifyExternalFileLine` (single-line writes outside the vault). |
-| [ProjectScanner.ts](src/ProjectScanner.ts) | Recursively finds git repos under a base folder (directory-`.git` only, submodules skipped); reads branch/status/remote via `git` (`execFile`). |
-| [ProjectMetadata.ts](src/ProjectMetadata.ts) | Repo title/stack detection; "recently updated" date (`getRepoLastUpdated`) from `CHANGELOG.md` mtime, falling back to `README.md`, then `PLAN.md`, then the vault project note's own mtime; `extractPlanSummary` (file-reading wrapper over `PlanParser`). |
-| [PlanParser.ts](src/PlanParser.ts) | Pure `parsePlan(content)` → `PlanSummary` (has-checkboxes, `##` phases carrying checkboxes, current phase + its open lines, whole-file done/total). Feeds the Projects detail view's read-only Plan section only — `PLAN.md` is never an item source, never synced, never written back. |
-| [StructuredFileParser.ts](src/StructuredFileParser.ts) | Parses `BUGS.md`/`TODO.md`/etc. into `ParsedProjectItem[]`. Filename-based default type, explicit-tag override, flat-list or header-report shape (`###`-presence decides), item `shape` for completion routing. |
-| [ProjectSyncManager.ts](src/ProjectSyncManager.ts) | Keeps each repo-matched project note in sync: frontmatter merge only (sync-owned keys + `cssclasses`; the note body is never written), an in-memory cache of each project's parsed items, `fs.watch`, manual sync entry point. |
-| [ProjectItemMutator.ts](src/ProjectItemMutator.ts) | Mutates a `ParsedProjectItem`'s source line directly (external file, not the vault) — completion (by item `shape`), priority, add/remove tag. Mirrors `TodoProcessor`'s vault-item methods. |
-| [HeaderBlockMover.ts](src/HeaderBlockMover.ts) | Multi-line block-move for `headerNested` items: cuts a `###` block and reinserts it under the first matching `##` status section (creating one if none exists), gated on a clean `git status` for that file. |
-| [ProjectQueue.ts](src/ProjectQueue.ts) | Appends a project note's selected text as a new open `#todo` item in that project's `TODO.md` (the "Send selection to project" command) — creates the file if missing. Picks flat-list vs. header-report block format per `StructuredFileParser.hasHeaderReportShape` on the *existing* file content, not a fixed format, so the appended item is actually recognized as an item regardless of which shape the file is already in. |
-| [SendToProjectModal.ts](src/SendToProjectModal.ts) | Single-field title prompt for "Send selection to project," pre-filled from the source note's name. |
-| [ProjectsSidebarView.ts](src/ProjectsSidebarView.ts) | Not a second sidebar — `ItemView`-independent helpers (display formatting, hand-typed-item grouping, the `GROUP_ORDER` constant) that `SidebarView.ts`'s Projects tab (list + per-project detail view, auto-follows the active file, merged synced/hand-typed item list, context menu with no "move") calls into. Kept separate so the logic is unit-testable without an `ItemView`. |
-| [HugoParser.ts](src/HugoParser.ts) | Pure, string-in: `parseHugoConfig` (site config → `contentDir`), `parsePostFrontmatter` (title/draft/date), `slugify`, `renderArchetype` (limited Go-template token substitution for "new post," not a full template engine). No `fs`, no YAML/TOML dependency — hand-rolled, like `PlanParser.ts`. |
-| [HugoScanner.ts](src/HugoScanner.ts) | fs orchestration for the Posts tab: `readHugoSite`/`scanPosts` (walks `contentDir`, excludes `_index.md`), `createPost` (writes `content/<section>/<slug>.md` from the repo's own archetype). Always called with the current vault's own base path, never a Projects scan result — see the file's own module comment and DESIGN.md's Hugo Posts section. |
-| [HugoTitleLinks.ts](src/HugoTitleLinks.ts) | Title-based wiki links in a Hugo vault: wraps `metadataCache.getLinkpathDest` so a `[[Page Title]]` that matches no filename falls back to a normalized frontmatter-`title` index (same rule as Fugu's render hook). Vault-only detection like Posts; gated on the `resolveTitleLinks` setting. See DESIGN.md. |
-| [ScanSnapshot.ts](src/ScanSnapshot.ts) | Pure builder + sorted-key serializer for the "Export scan snapshot" command (`warped-command-snapshot.json` at the vault root, `schema: 1`). `main.ts`'s `buildScanSnapshot` runs the real scans (vault, Projects repos without syncing notes, Hugo posts) and passes them in. Space Command emits the same shape to diff parsers. |
-| [NewHugoPostModal.ts](src/NewHugoPostModal.ts) | Single-field title + section-dropdown prompt for the Posts tab's "New post," mirrors `SendToProjectModal.ts`. |
-
-### Data flow
-
-1. **Scan**: `TodoScanner` reads all markdown files, extracts lines tagged `#todo` / `#todone` / `#idea` / `#principle`, skipping code blocks and inline backticked tags.
-2. **Cache**: Results land in `Map<filePath, TodoItem[]>`. File watchers re-scan affected files; `todos-updated` fires on any change.
-3. **Render**: The sidebar listens for `todos-updated` and re-renders. Filters (active tag, assignee, focus) apply at render time.
-4. **Mutate**: User actions (checkbox click, context menu, slash command) call `TodoProcessor` which writes back to source.
-5. **Refresh**: Mutations trigger file changes → scanner rescans → events fire → sidebar re-renders.
+| [tags.ts](src/tags.ts) | Space Command's tag vocabulary and write rules, pure and line-in/line-out: complete/reopen, strike, priority, focus, snooze, tidy, convert, make task from idea, normalised anchor text. Mirrors Space Command's `Tag.swift`, `TagExtractor.swift`, `Mutator.swift`, `LineEdit.swift`. The only place tag text is edited. |
+| [blocks.ts](src/blocks.ts) | Pure block model: a heading and its lines, ending at the next heading of any level (Space Command's section rule). |
+| [blockOps.ts](src/blockOps.ts) | Pure block operations: header sort, and cut/append for Move TODO to another file. |
+| [lineOps.ts](src/lineOps.ts) | Pure targeting for tag commands (cursor line, selection, a tagged heading's children) and their per-line edits. |
+| [TagCommands.ts](src/TagCommands.ts) | Tag commands as palette commands and editor-menu items (`ACTIONS`), plus Complete all under heading. Applies `lineOps.ts` edits as one transaction. |
+| [CheckboxSyncExtension.ts](src/CheckboxSyncExtension.ts) | CodeMirror transaction filter: a single-line box toggle gets its tag write in the same transaction. |
+| [HeaderSortExtension.ts](src/HeaderSortExtension.ts) | Sort button and `done/total` progress widget on tagged headings; Sort block at cursor. |
+| [HeaderChecklistExtension.ts](src/HeaderChecklistExtension.ts) | Enter at the end of a tagged task or idea heading inserts a `- [ ] ` item. |
+| [SlashCommandSuggest.ts](src/SlashCommandSuggest.ts) | `/` at column 0: `/todo`, `/todos`, `/idea`, `/ideas`, `/today`, `/tomorrow`, `/callout`. |
+| [AtSuggest.ts](src/AtSuggest.ts) | `@`: dates (`@today`, `@tomorrow`, `@yesterday`) and team handles, with "Add @handle to team". |
+| [TagSuggest.ts](src/TagSuggest.ts) | `#`: Space Command's vocabulary with hints, then the vault's other tags by use. |
+| [mentions.ts](src/mentions.ts) | Pure `@handle` extraction (Space Command's `MentionExtractor.swift`) and the team note's line format. |
+| [TeamManager.ts](src/TeamManager.ts) | Reads and watches the team note; writes it only on Add @handle to team or Update team note. |
+| [AppSwitch.ts](src/AppSwitch.ts) | Open in Space Command (`spacecommand://reveal`), the `obsidian://space-command` handler, and the landed-line flash. |
+| [landing.ts](src/landing.ts) | Pure line finding for app switching: section labels, anchor text, nearest matching line. |
+| [MoveTargetModal.ts](src/MoveTargetModal.ts) | Note picker for Move TODO to another file (pinned, recent, open, all). |
+| [TabLockManager.ts](src/TabLockManager.ts) | Lock buttons on tab headers, via Obsidian's pinning; locked tabs open links in new tabs. |
+| [HugoTitleLinks.ts](src/HugoTitleLinks.ts) | Title-based wiki links in a Hugo vault: wraps `metadataCache.getLinkpathDest` with a front-matter-title fallback. Vault-root detection through the vault adapter, gated on `resolveTitleLinks`. |
+| [HugoParser.ts](src/HugoParser.ts) | Pure helpers for title links: config candidates, `contentDir`, link-title normalisation. |
+| [HelpNoteManager.ts](src/HelpNoteManager.ts) | Creates `Space Command Help.md` only from Settings › Help, and opens it. Never rewrites an existing note. |
+| [types.ts](src/types.ts) | `TeamMember`, `SpaceCommandSettings`, `DEFAULT_SETTINGS`. |
+| [utils.ts](src/utils.ts) | `showNotice` with the logo, date formatting and the insert-date presets. |
+| [shared/](src/shared) | The notice factory, a local copy carried over from the old monorepo. |
 
 ## Conventions
 
-- **Tag system**: `#todo`/`#todone` for tasks, `#idea` for captured ideas, `#principle` for guiding principles. Lifecycle: `#focus` (top priority), `#p0`–`#p4` (priority tiers), `#future`/`#snooze`/`#snoozed` (snoozed). Project tags are anything else.
-- **Code-block safety**: The scanner tracks triple-backtick state and checks for inline backticks so `#todo` examples in code blocks are excluded.
-- **Event-driven UI**: Scanner extends `Events`. Sidebar listens; no polling.
-- **Settings tab**: `WarpedTodoSettingTab` is defined inline in [main.ts](main.ts).
-- **Tests**: Live in `src/__tests__/`, run via vitest.
+- **Tag vocabulary**: `#todo`/`#todos` → `#todone`/`#todones` for tasks, `#idea`/`#ideas`/`#ideation` for ideas, `#principle`/`#principles` for principles. `#focus`, `#p0`–`#p4`, and `#snooze` (`#future`/`#snoozed` read, never written). Anything else is a project or topic tag.
+- **Space Command's rules win.** A tag write that isn't in `tags.ts`, or that differs from Space Command's, is a bug. Rule questions go to the Space Command commander session, not a local judgment call.
+- **No background writes.** No writes on load, file change, or timer; only on an explicit action, as one undoable transaction.
+- **Pure where possible.** Logic takes `string[]` lines and 0-based line numbers, with no Obsidian/CodeMirror types, so tests feed it plain strings.
+- **Code-block safety**: fenced code, inline code spans and front matter are never items.
+- **Settings tab**: `SpaceCommandSettingTab` is defined inline in [main.ts](main.ts).
+- **Tests**: live in `src/__tests__/`, run via vitest. Hand tests for a release are in [TESTING.md](TESTING.md).
 
 See [plugin-conventions.md](plugin-conventions.md) for the full UI/code
-conventions reference: sidebar patterns, CSS naming, branding, button
-styles, settings tab structure, TypeScript conventions, and file layout.
+conventions reference: branding, menus and commands, CSS naming, settings
+tab structure, TypeScript conventions.
 
 ## Release checklist
 
@@ -104,13 +89,13 @@ When making changes, keep these in sync:
 
 ### Versioning
 
-`major.minor.patch`, all pre-1.0 (`0.x.y`). Pick the segment by what the change *is*, not by habit — the project has drifted before into bumping minor for everything, which erases the signal a version number is supposed to carry:
+`major.minor.patch`, from 1.0.0 (the Space Command cut; `0.x.y` before it). Pick the segment by what the change *is*, not by habit — the project has drifted before into bumping minor for everything, which erases the signal a version number is supposed to carry:
 
 - **patch (Z)**: bug fixes, visual/UX tweaks to something that already exists, refactors, renames, cleanup, dead-code removal, doc-only changes. Nothing a user would describe as a new or missing capability. CHANGELOG header is usually `### Fixed` or `### Changed`.
-  Example: `0.38.3` "Fixed — Projects base folder setting" (a debounce bug), `0.38.5` "Changed — README rewritten for newcomers."
+  Example: `0.59.1` and `0.59.2` were fixes; `0.38.5` "Changed — README rewritten for newcomers."
 - **minor (Y)**: a capability was added or removed — a new setting, a new tab/section, a feature taken out. CHANGELOG header is usually `### Added` or `### Removed`.
-  Example: `0.39.0` "Added — Guiding Principles in the Projects detail view", `0.45.0` "Removed — TODONE archive log."
-- **major (X)**: reserved. Don't bump it without the user explicitly asking — not for this plugin's own judgment call, even for a large change.
+  Example: `0.59.0` (Phase 5: tag and block commands), `0.45.0` "Removed — TODONE archive log."
+- **major (X)**: reserved. Don't bump it without the user explicitly asking — not for this plugin's own judgment call, even for a large change. 1.0.0 was Bruce's call, for the Space Command cut.
 
 If a change is borderline (e.g. a big `### Changed` that reshapes how an existing feature works), default to patch; minor is for things a user would notice as *new* or *gone*, not just *different*. When a single commit bundles both a fix and a feature, bump for the higher tier (minor) and let the CHANGELOG entry's own headers (`### Added` / `### Fixed`) describe the mix.
 

@@ -1,164 +1,163 @@
-# ␣⌘ Warped Command for Obsidian
+# ␣⌘ Space Command for Obsidian
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Platform: Desktop only](https://img.shields.io/badge/platform-desktop--only-lightgrey)
 ![Obsidian: 1.14+](https://img.shields.io/badge/obsidian-1.14%2B-7c3aed)
 
-Track `#todo` tags across your vault and `TODO.md`/`BUGS.md` across your git repos, all from one sidebar.
+Write tasks in your vault for [Space Command](https://space-command.ca). Space Command finds, tracks and completes the `#todo`, `#idea` and `#principle` lines across your notes and repos. This plugin is the other half: it helps you write those lines in Obsidian, with the same tag rules, so the two apps never disagree about a file.
 
-- **Tag-based tracking.** `#todo`, `#idea`, `#principle` on any line or heading, scanned automatically and sorted by priority.
-- **Focus Mode.** An immersive single-item queue for working through your top-priority items one at a time.
-- **Header TODOs.** Tag a heading once and every item underneath becomes a tracked block, still living in its original note.
-- **Mentions and delegation.** `@handle` assigns work to a teammate; a tag cloud filters by person or topic.
-- **Projects.** Point a folder of git repos at the sidebar and it syncs `TODO.md`/`BUGS.md`/`ISSUES.md` items both ways, no separate app.
+- **Tags as you type.** `/todo`, `@today`, `#focus`: suggestions for Space Command's tags, dates and the handles in your team note.
+- **Checkboxes that mean something.** Tick a box and `#todo` becomes `#todone` in place, the way Space Command writes it.
+- **Tag commands.** Done, focus, snooze, priority and tidy tags, on a line, a selection or a whole heading, from the right-click menu.
+- **Blocks.** Tag a heading once and the list under it is a block you can sort, count, complete or move.
+- **Switch apps at the line.** Open the task under your cursor in Space Command, and land on the right line when Space Command sends you back.
+
+The plugin doesn't scan your vault or keep a list. It only writes when you act in the editor, never in the background.
 
 ## Contents
 
-- [␣⌘ Warped Command for Obsidian](#-warped-command-for-obsidian)
-  - [Contents](#contents)
-  - [What it solves](#what-it-solves)
-  - [Quick start](#quick-start)
-  - [Organize with tags](#organize-with-tags)
-  - [Focus mode](#focus-mode)
-  - [Tabs](#tabs)
-  - [Mentions and delegation](#mentions-and-delegation)
-  - [Header TODOs](#header-todos)
-  - [Ideas and principles](#ideas-and-principles)
-  - [Moving TODOs between files](#moving-todos-between-files)
-  - [Projects](#projects)
-  - [Posts](#posts)
-  - [Editor shortcuts](#editor-shortcuts)
-  - [Commands and hotkeys](#commands-and-hotkeys)
-  - [Sidebar utilities](#sidebar-utilities)
-  - [Installation](#installation)
-  - [Releases and changelog](#releases-and-changelog)
-  - [Contributing](#contributing)
-  - [License](#license)
+- [Install](#install)
+- [Writing tasks](#writing-tasks)
+- [Suggestions as you type](#suggestions-as-you-type)
+- [Tag commands](#tag-commands)
+- [Blocks under a heading](#blocks-under-a-heading)
+- [Switching between the apps](#switching-between-the-apps)
+- [Team note](#team-note)
+- [Other features](#other-features)
+- [Commands](#commands)
+- [Settings](#settings)
+- [Upgrading from Warped Command](#upgrading-from-warped-command)
+- [Changelog, contributing and licence](#changelog-contributing-and-licence)
 
-## What it solves
+## Install
 
-Action items get lost. A fix mentioned in a meeting note, an idea scattered in a project doc, a "we should really..." buried three paragraphs into a daily log: none of it resurfaces unless you go looking for it, and you only go looking once you've already forgotten it exists.
+You need Obsidian 1.14 or later, on desktop. Space Command is optional, but most of the point.
 
-Warped Command's fix is one plain tag, `#todo`. Write it inline, wherever the thought happens. The plugin scans your vault, finds every tagged line, and surfaces it in a sidebar sorted by priority, so the fix you noted last Tuesday shows up again when you need it, not just when you happen to reopen that file.
+### From the release zip
 
-Tag a single line for a one-off task. For a cluster of related tasks, tag the heading instead (`#todo` or `#todos`) and skip tagging each line:
+1. Download the zip from [space-command.ca](https://space-command.ca).
+2. Unzip it. You get a `space-command` folder with `main.js`, `manifest.json` and `styles.css`.
+3. Move that folder into `<vault>/.obsidian/plugins/`.
+4. In Obsidian, open Settings › Community plugins.
+5. Turn on "␣⌘ Space Command for Obsidian".
+
+### From source
+
+```bash
+git clone git@github.com:robotpony/space-command-obsidian.git
+cd space-command-obsidian
+npm install
+./install.sh
+```
+
+`install.sh` builds the plugin and asks which vaults to install it into. `./install.sh -p` reinstalls to the same vaults without asking, and `./install.sh -d 8` searches deeper for nested vaults.
+
+To install by hand instead, run `npm run build` and copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/space-command/`.
+
+Having trouble? See [Troubleshooting](TROUBLESHOOTING.md).
+
+## Writing tasks
+
+Put a tag on any line:
 
 ```markdown
-<!-- meetings/2026-08-14-standup.md -->
-## Standup notes #todos
+- [ ] Review the API spec #todo
+- [ ] Ship the release notes #todo #focus #p1
+A lighter onboarding flow for repeat users #idea
+Prefer plain text over clever formats #principle
+```
+
+| Tag | Meaning |
+|---|---|
+| `#todo` / `#todos` | A task (`#todone` / `#todones` once done) |
+| `#idea` / `#ideas` / `#ideation` | An idea, not yet a task |
+| `#principle` / `#principles` | A guiding principle |
+| `#focus` | The thing to do next |
+| `#p0`–`#p4` | Priority, `#p0` highest |
+| `#snooze` | Not now (`#future` and `#snoozed` are read the same way) |
+
+Any other tag is a project or topic, and `@handle` assigns a task to someone.
+
+To tag a group of tasks once, tag the heading. Every list item under it, up to the next heading of any level, belongs to it:
+
+```markdown
+### Standup notes #todos
 - [ ] Check token refresh logic @sarah #p1
 - [ ] Write a regression test once the fix lands
 ```
 
-Both items appear in the sidebar right away as one block under "Standup notes," sorted by priority, still living in the meeting note where the context is. Nothing moved to a separate app, nothing got retyped into a task manager. See [Header TODOs](#header-todos) for the full pattern, including sub-sections and moving the whole block at once.
+Press Enter at the end of a tagged heading and you get a checklist item to fill in.
 
-Why this holds up over time:
+### Completing a task
 
-- **Markdown native.** It's a tag on a line, so it works with grep, git blame, and every other tool you already use on your vault.
-- **In context.** Tasks stay where you wrote them. There's no decision about which project the task "really" belongs to.
-- **No lock-in.** It's plain text. Disable the plugin and your TODOs are still there, still readable.
-- **One vault, one focus.** This is a working list, not a life-management system. It doesn't try to replace a full task manager, a calendar, or a wiki.
+Click the box. The plugin follows Space Command's rules:
 
-That covers your vault. Warped Command also reaches outside it: point the **Projects** tab at a folder of git repos on disk, and it pulls `#todo`/`#idea`/`#bug` items straight out of each repo's `BUGS.md`/`TODO.md`, keeps them synced both ways, and shows them in the same sidebar as your vault TODOs. See [Projects](#projects).
+- `- [ ] text #todo` becomes `- [x] text #todone`, in place. `#todos` becomes `#todones`, and the case is kept (`#TODO` → `#TODONE`).
+- A box under a tagged heading only toggles: the heading carries the tag.
+- Unticking reverses it.
+- No date is ever stamped.
+- The box and the tag change in one edit, so one undo reverts both.
 
-## Quick start
+Ideas and principles are finished by striking the line through, which **Mark done / reopen** does for you (see [Tag commands](#tag-commands)).
 
-1. **Add a task**: put `#todo` on any line or header for a list of TODOs.
+## Suggestions as you type
 
-   ```markdown
-   - [ ] Review the API spec #todo
-   ```
+### `/` at the start of a line
 
-2. **See your tasks**: open the sidebar with `Cmd/Ctrl+Shift+T`.
+| Command | Inserts |
+|---|---|
+| `/todo` | `- [ ] #todo ` |
+| `/todos` | A `#todos` heading and a blank item |
+| `/idea` | `- [ ] #idea ` |
+| `/ideas` | An `#ideas` heading and a blank item |
+| `/today`, `/tomorrow` | The date, in your insert format |
+| `/callout` | An Obsidian callout block |
 
-3. **Complete a task**: click the checkbox. The line becomes `#todone @YYYY-MM-DD` in place.
+### `@` anywhere
 
-That's it. Everything below is optional. If you've got several related tasks (a sprint, a meeting's action items), start with [Header TODOs](#header-todos).
+`@today`, `@tomorrow` and `@yesterday` insert the date, in the "Insert date format" setting (default `dddd, MMMM Do`, like "Tuesday, July 10th"). Other names come from your [team note](#team-note), and a handle that isn't there yet offers **Add @handle to team**. An email address and `@2026-10-17` aren't treated as handles.
 
-The first time you install the plugin, it also drops a `Warped Command Help.md` note into your vault and opens it: a live example with real `#todo`/`#idea` lines to try, not a separate manual. It's never overwritten or recreated, so edit or delete it freely; reopen (or recreate) it any time from the Help section at the bottom of Settings → "Show onboarding doc again."
+### `#` after a space
 
-## Organize with tags
+Space Command's tags come first, each with a short hint ("priority", "snooze"), then the other tags in your vault, most used first. In Live Preview and Reading view, priority, idea and snooze tags are coloured the way Space Command colours them.
 
-**Priority tags** control sort order:
+## Tag commands
 
-| Tag                       | Purpose                                              |
-|---------------------------|------------------------------------------------------|
-| `#focus`                  | The one thing to do next (highlighted, always first) |
-| `#today`                  | Due today; sorts above `#p0`                         |
-| `#p0` – `#p4`             | Priority levels (`#p0` is highest)                   |
-| `#future` / `#snooze`     | Snoozed, an ordinary tag; still shows in the active list and tag cloud, just excluded from Focus Mode's queue |
+Right-click in the editor, or use the command palette. Each command works on the line at the cursor, on every task or idea in a selection, or, on a tagged heading, on the items under it. One undo reverts the whole command.
 
-Items sort by: focus, then priority, then tag count (more tags means more context, so it sorts higher).
+| Command | What it does |
+|---|---|
+| Mark done / reopen | Completes or reopens a task. Strikes an idea or principle through, or un-strikes it. On a tagged heading it refuses; use Complete all under heading |
+| Toggle focus | Adds or removes `#focus` |
+| Toggle snooze | Adds `#snooze`, or removes every snooze tag (`#snooze`, `#snoozed`, `#future`) |
+| Priority › P0–P4 | Replaces the line's priority, or adds one |
+| Remove priority | Removes `#p0`–`#p4` |
+| Make task from idea | `#idea` → `#todo`, `#ideas` → `#todos`, in place |
+| Convert to tasks | Turns plain lines or bullets into `- [ ] … #todo`. Under a tagged heading they become plain `- [ ]` items |
+| Tidy tags | Reorders the tags at the end of the line (kind, priority, focus or snooze, projects, handles) and drops repeats. Tags inside the sentence or in backticks stay put |
 
-**Project tags** group TODOs in the sidebar's tag cloud. Any tag that isn't a priority, lifecycle, or type tag becomes a project (this is separate from the **Projects tab**, which tracks git repos on disk rather than vault tags; see [Projects](#projects), though a project tag that matches a tracked repo pulls in that repo's items too):
+New tags always go at the end of the line, and existing ones are renamed where they are.
 
-```markdown
-- [ ] Write endpoint docs #todo #api #focus
-- [ ] Update welcome email #todo #onboarding
-```
+## Blocks under a heading
 
-**Automatic tags from filename.** TODOs in your projects folder without an explicit project tag are grouped by filename instead:
+A tagged heading and the lines under it make a block:
 
-```markdown
-<!-- In projects/api-tasks.md -->
-- [ ] Fix rate limiting #todo       → grouped under #api-tasks
-- [ ] Add caching #todo #backend    → grouped under #backend (explicit wins)
-```
+- **Progress.** In Live Preview, the heading shows how many of its tasks are done, like `2/5`. Ideas and snoozed tasks don't count.
+- **Sort.** The sort button beside the heading, or **Sort block at cursor**, orders the items: open before done, then focus, P0–P4, no priority, snoozed. Sub-items stay with their parents. It only runs when you ask.
+- **Complete all under heading** completes the open tasks in the block, and leaves ideas and principles alone.
+- **Move TODO to another file** cuts the line at the cursor, with its sub-items, or a whole tagged heading block, and appends it to a note you pick. Nothing is left behind. A task moved out from under a tagged heading gains `#todo`, so it's still a task.
 
-Files outside the projects folder don't get inferred tags. Configure excluded folders (like `log`) in Settings.
+## Switching between the apps
 
-Click a tag in the cloud to filter the list. Click again to clear. The cloud only shows tags with at least one active TODO; empty tags are hidden so you can always click and see results. Pinned `#focus` and `#p0` lead the cloud when they're in use.
+**Open in Space Command**, from the command palette, the editor's right-click menu or an optional ribbon icon, shows the task under your cursor in Space Command.
 
-The Ideas tab has its own tag cloud built from items in that tab (no `#focus` / `#p0` pinning; those are TODO concepts). The active filter persists across tabs, so clicking `#api` on TODOs and switching to Ideas keeps you on the same label.
+Going the other way, Space Command opens notes with an `obsidian://space-command` link carrying the note, the line and the item's text. The plugin opens the note and lands on the item, even if it has moved a few lines since, then flashes the line briefly.
 
-Right-click any TODO row for quick actions: Focus, Later, Snooze, Copy, Move to.
+Neither direction writes anything. If you don't use Space Command, turn off "Show Open in Space Command" in Settings to hide the command and menu item.
 
-## Focus mode
+## Team note
 
-Click the eye icon next to the TODOs tab to enter immersive Focus Mode. The sidebar shows a single focus card: the source heading with a link icon, a checkbox beside the task, faded tag chiclets, and a friendly date.
-
-- **Complete** finishes the task (or just check the box).
-- **Skip** rotates the current item to the back of the queue.
-- **Exit focus mode →** link at the bottom returns to the normal sidebar.
-
-The header stays visible when focus mode is on, and the title reads "Focus." The eye icon turns amber to signal the active state; clicking it again exits focus mode without moving the mouse. The other tab buttons stay clickable; clicking one exits focus and switches straight to that tab, same as switching between any two tabs normally.
-
-The queue is built from `#focus`-tagged TODOs first; if none exist, it falls back to your top-priority items. When the queue empties, you can choose **Continue with next priority task** to keep going.
-
-Mode state persists across sessions by default; configure via the `focusQueueLimit` (1–5, default 1) and `focusModePersist` settings.
-
-## Tabs
-
-The sidebar's header has four tabs and a Focus toggle, plus a kebab (⋯) menu:
-
-| Button              | Shows                                                                                  |
-|----------------------|----------------------------------------------------------------------------------------|
-| TODOs                | Active `#todo` items, grouped by header where applicable. Default tab.                |
-| Projects             | Git repos tracked from a folder on disk, not vault notes. See [Projects](#projects).   |
-| Ideas                | Active `#idea` / `#ideas` / `#ideation` items                                          |
-| Posts                | A Hugo site's content, drafts-filtered by default. See [Posts](#posts).               |
-| Focus (eye icon)     | Toggles [Focus mode](#focus-mode), an immersive single-item queue. Not a fifth tab: the other four stay clickable while it's active, and clicking one exits focus and switches in one click. |
-
-Snoozed items (`#future` / `#snooze` / `#snoozed`) show up in TODOs and Ideas like any other tag; right-click a row to Snooze/Unsnooze it. The only place snoozed items are excluded is Focus Mode's queue.
-
-Below the TODOs list (not Ideas), the **Summary** section shows priority breakdown, completion velocity (today / week / month), and top backlogs.
-
-The kebab menu, next to the tab buttons, covers Refresh, Stats, About, and Settings from any tab; it adds Sync when you're on the Projects tab, and New post when you're on the Posts tab. See [Sidebar utilities](#sidebar-utilities).
-
-## Mentions and delegation
-
-Assign TODOs to people with `@handle`:
-
-```markdown
-- [ ] Review the API spec #todo @eric.m
-- [ ] Update onboarding docs #todo @me
-```
-
-Mentions appear as subdued badges next to topic tags. `@me` resolves to your handle from the team file. The tag cloud shows assignee pills alongside project tags (`@me` first, then other handles with active TODOs, then `@unassigned`). Click a pill to filter by that person; click again to clear.
-
-### Team file
-
-Create `team.md` in your vault root (or configure the path in Settings):
+Handles live in a vault note, `team.md` by default (set the path in Settings › Team):
 
 ```markdown
 - @bruce — Bruce Alderson (me)
@@ -166,195 +165,59 @@ Create `team.md` in your vault root (or configure the path in Settings):
 - @dana — Dana Park
 ```
 
-Mark yourself with `(me)`. The plugin auto-creates this file from Settings if it doesn't exist and auto-adds unknown handles encountered in TODOs.
-
-## Header TODOs
-
-Tag a heading with `#todo` (or `#todos`) and the list items underneath become children of that heading. It's the most useful style for sprints, meeting follow-ups, or any block of related tasks that belongs in one place.
-
-```markdown
-## Sprint 12 #todos #api
-- [ ] Fix auth bug #p0
-- [ ] Update docs
-- [ ] Investigate flaky test
-
-**Diagnostics (P0)**
-- [ ] Add structured logging
-- [ ] Wire OpenTelemetry traces
-```
-
-**In the sidebar**, the heading renders as a single block:
-
-- The header row shows the heading text, the source filename, and a `→` link that opens the file with the entire block (header through last child) selected.
-- Children render indented underneath, each with its own checkbox.
-- Bold lines like `**Diagnostics (P0)**` carry through as in-block subheadings, so you can label sections without breaking the parent relationship.
-- The header itself has no checkbox; completing a block used to cascade to all children, and it was too easy to do by accident.
-
-**Completion is per-child.** Tick children as you finish them. When the last live child is done, the whole header block disappears from the active list automatically. There's no "mark the header done" step.
-
-**Filtering keeps headers visible.** Click a tag like `#api` in the cloud and the header stays in view even if only its children carry the tag, so you see the matching work in its original context instead of stripped of its parent.
-
-**Inline controls on the header row:**
-
-- **Sort buttons** re-order children by priority tag (`#p0` → `#p4`).
-- **Right-click → Move to…** (or the command palette) relocates the entire block, header plus all children, to another file in one move.
-
-The same pattern works for `#idea` / `#ideas` headings, with children rendered the same way in the Ideas tab.
-
-## Ideas and principles
-
-Capture ideas separately from actionable TODOs:
-
-| Tag                              | Purpose                                       |
-|-----------------------------------|-----------------------------------------------|
-| `#idea` / `#ideas` / `#ideation`  | Something to capture (not yet actionable)     |
-| `#principle` / `#principles`      | A guiding principle (reference only)          |
-
-Click an idea's checkbox to dismiss it. Right-click to promote it to a TODO.
-
-`#principle` items don't appear in the Ideas tab. They're a project-document feature: a "Guiding Principles" section lists them at the top of a project's TODO list in the Projects tab's detail view (below the header and readme), they show up in the project-info popup for any project they're tagged with, and the Stats modal still counts them.
-
-`#principles` also works as a block-header tag, the same way `#todo`/`#idea` headers do (see [Header TODOs](#header-todos)): tag a heading `## Guiding Principles #principles` and every bullet underneath it is picked up automatically, no per-line tagging needed. Both project note templates (tag-based and repo-synced) scaffold this heading for you.
-
-## Moving TODOs between files
-
-Use **Move TODO to another file** (right-click or command palette) to relocate a TODO. The source line becomes `#moved @date`, and a fresh copy appears in the destination.
-
-Moved lines are dimmed in both Reading mode and Live Preview, so they stay visible as an audit trail without cluttering your active view. You can also type `#moved` manually; the plugin auto-stamps the date.
-
-## Projects
-
-The Projects tab tracks work across a folder of git repos on disk, instead of vault notes. It's the second tab in the sidebar, between TODOs and Ideas, not a separate panel — earlier versions of the plugin gave it its own sidebar, which is where the `ProjectsSidebarView.ts` filename comes from.
-
-Point it at a folder in Settings → Projects → "Projects base folder" (e.g. `/Users/you/projects`). It finds every git repo underneath (skipping `node_modules`, `dist`, `build`, `archive`, and anything else you add to "Exclude repo directories from scan"), and for each one:
-
-- Creates or updates a vault note for the repo, with its name, README title, tech stack, and remote URL in the frontmatter. Branch, git status, and the last-synced time are tracked by the plugin, not written into the note, so a synced note doesn't churn your vault's git history every time you switch branches or leave a repo dirty.
-- Pulls in `#todo`/`#idea`/`#bug` items from the repo's `BUGS.md`, `TODO.md`, `TODOS.md`, `IDEAS.md`, or `ISSUES.md`, tagged explicitly or not (an untagged line in `BUGS.md` is assumed to be a bug, in `TODO.md` a todo, and so on).
-
-Each row shows branch and git status, item counts, and a relative "recently updated" date (the repo's `CHANGELOG.md`, falling back to `README.md`, then `PLAN.md`), all on one dot-separated line, plus the repo's own README excerpt below it when it has one. The sort icon beside the filter box switches between Active items first, Name (A–Z), Most items, Needs attention (dirty git status or an open bug), and Recently updated — set which one the list opens with each session in Settings → Projects → "Default projects sort" (Recently updated by default); picking a different sort from the list's own sort button is session-only and doesn't change that setting.
-
-Click a project in the list to open its note and see a detail view: repo facts pinned at the top, the README's opening paragraph underneath (if it has one), a "Guiding Principles" section for any `#principle`/`#principles` items tagged with the project (see [Ideas and principles](#ideas-and-principles)), a "Plan" section showing the repo's `PLAN.md` if it has one, and every tracked item grouped by type. The Plan section is read-only: for a phased checklist it shows how far along you are and the current phase's open items; every `PLAN.md` also gets a collapsible full render. The README excerpt and the Plan section each link out to the source file. Completing an item there writes back to the actual file in the repo, not just the vault note; the same familiar focus/snooze/priority actions from the TODOs tab work here too (no "move," since moving a synced item elsewhere would just have it reappear in its original note on the next sync).
-
-Opening any project's note anywhere in the vault (Quick Switcher, a wikilink, clicking through from a project block on the TODOs/Ideas tab) jumps the sidebar straight to that project's detail view, whatever tab it was showing before; Back returns you there. Turn this off in Settings → Projects → "Auto-open Projects tab" if you'd rather the sidebar stay put until you switch tabs yourself.
-
-Each project's detail view has its own **⋯** overflow menu (separate from the sidebar header's kebab menu) for the less-frequent actions: copy the repo's local path or remote URL, open it in a terminal or editor app (set which ones under Settings → Projects → "Terminal app"/"Editor app"; macOS only), or resync its tracked items on demand without waiting for the background watcher.
-
-Prose-style bug write-ups (a `### Title` under a `## Open`/`## Fixed` heading, rather than a flat checklist) complete the same way: the whole write-up moves to the first section that reads as "done" (creating one if the file doesn't have one yet), and moves back just as easily if you uncheck it. This refuses if the file has changes it hasn't committed yet; commit or stash first, so a mistake is always one `git checkout` away from undone.
-
-Structured files stay in sync automatically (a background watcher picks up changes on disk), or trigger a sync manually with **Sync** in the kebab menu (while on the Projects tab) or the "Sync Projects" command. Requires the plugin's desktop build (`git` and filesystem access aren't available on mobile).
-
-Frontmatter is hidden in the note's editor view for these project notes; the sidebar already shows the fields that matter, so the raw YAML would just be noise. Note content you write by hand (an `## Overview` section, your own notes) is never touched by syncing.
-
-### Sending work to a project
-
-Write in a project's note, whether that's a spec, a plan worked out with an agent, or your own notes, select a chunk of it, and run **Send selection to project** (command palette, or bind it to a hotkey). A small prompt asks for a title, then the selection is appended to that project's `TODO.md` as a new open `#todo` item, tagged and ready for whatever picks up work in that repo next, an agent or you.
-
-This only appears on notes that are themselves repo-matched project notes (described above); there's nowhere to send a selection from a note with no linked repo. `TODO.md` is created if the project doesn't have one yet.
-
-## Posts
-
-The Posts tab lists a Hugo site's content — drafts by default, grouped by content section (its top-level folder). **It's scoped to the current vault only, on purpose**: Posts assumes the Hugo site, if there is one, *is* the vault you have open, and checks only the vault's own root for a `hugo.toml`, `config.yaml`, or similar (either at the root or under `config/_default/`) — never a repo found elsewhere, even one the Projects tab happens to be tracking. If your blog is a separate repo from your notes vault, open the blog's own folder as its own vault to use Posts with it. There's nothing else to configure for detection itself; once found, it reads that site's own `contentDir` setting to find its posts.
-
-Rows follow the same layout as the Projects list: a bold title (with a `draft` tag when unpublished), a compact relative edit age below it (`~2d`), a short excerpt when one's available — the post's frontmatter `description`/`summary`, falling back to its own opening paragraph — and the filename on its own line at the bottom with a → to open it. Click a row to open it in Obsidian's own editor; right-click for the alternatives — Open in Editor (Settings → Posts → "Editor app" — its own setting, separate from the Projects section's), Open in default app, or Reveal in Finder. Switch the filter pills from Drafts to All to see published posts too.
-
-**New post**, in the kebab menu while on the Posts tab, prompts for a title and a section, then creates `content/<section>/your-title.md` from the repo's own Hugo archetype (`archetypes/<section>.md`, falling back to `archetypes/default.md`, then a simple built-in template) and opens it.
-
-**Title links.** If your Hugo site writes wiki links by page title (`[[Cherry tomato and garlic spaghetti]]` for `cherry-tomato-and-garlic-spaghetti.md`), Obsidian can't resolve them by filename. In a Hugo vault the plugin falls back to matching the link against each content page's frontmatter `title`, lowercased with punctuation runs collapsed to a space, so clicking, hover preview, backlinks, and the graph all find the page. Files and frontmatter are never changed. Turn it off under Settings → Posts → "Resolve wiki links by page title."
-
-The Posts tab is read/navigate + create only — there's no draft/publish toggle here; flipping `draft` in the frontmatter and running `hugo` stays a terminal job. Requires the plugin's desktop build, same as Projects.
-
-## Editor shortcuts
-
-### Slash commands
-
-Type `/` at the start of a line:
-
-| Command      | Inserts                              |
-|--------------|---------------------------------------|
-| `/todo`      | `- [ ] #todo ` (ready to type)       |
-| `/todos`     | `- [ ] #todos ` heading + blank item |
-| `/idea`      | `- [ ] #idea `                       |
-| `/ideas`     | `- [ ] #ideas ` heading + blank item |
-| `/today`     | Today's formatted date               |
-| `/tomorrow`  | Tomorrow's formatted date            |
-| `/callout`   | Obsidian callout block               |
-
-### @ suggestions
-
-Type `@` anywhere to get a combined suggestion popup:
-
-| Suggestion              | Inserts                                       |
-|--------------------------|-----------------------------------------------|
-| `@today` / `@date`      | Today's formatted date                        |
-| `@tomorrow`             | Tomorrow's date                               |
-| `@yesterday`            | Yesterday's date                              |
-| `@me` / `@handle`       | Attribution mention (from team file)          |
-
-Date keywords take priority over user handles. Unknown handles are auto-added to your team file.
-
-These insert with the "Insert date format" setting (default `dddd, MMMM Do`, e.g. "Tuesday, July 10th"). "Completion date format," which stamps `#todone @date`, is a separate setting that defaults to `YYYY-MM-DD`. Both offer a few presets plus a custom moment.js format in Settings → TODOs.
-
-## Commands and hotkeys
-
-| Command                        | Default hotkey       | What it does                                            |
-|---------------------------------|-----------------------|----------------------------------------------------------|
-| Toggle TODO sidebar            | `Cmd/Ctrl+Shift+T`   | Show or hide the sidebar                                |
-| Quick Add TODO                 | `Cmd/Ctrl+Shift+A`   | Insert a new `#todo` at cursor or append to current line |
-| Refresh TODOs                  | —                    | Re-scan the vault and refresh the sidebar               |
-| Move TODO to another file      | —                    | Open the file picker; relocates the line at cursor      |
-| Copy as Slack Markdown         | `Cmd/Ctrl+Shift+C`   | Converts selected text to Slack's mrkdwn (headings to bold, adjusted emphasis) |
-| Copy as Notion Markdown        | `Cmd/Ctrl+Shift+N`   | Strips Obsidian-specific syntax (wiki links, embeds, plugin tags) for clean Notion paste |
-| Toggle Projects tab            | —                    | Switch to the Projects tab                              |
-| Sync Projects                  | —                    | Re-scan every repo under the configured base folder and update their notes |
-| Send selection to project      | —                    | From a project note only: appends the current selection as a new `#todo` item in that project's `TODO.md`. See [Sending work to a project](#sending-work-to-a-project). |
-| Export scan snapshot           | —                    | Re-scans the vault, repos, and Hugo posts and writes what was parsed to `warped-command-snapshot.json` at the vault root: sorted, 2-space JSON you can `diff` between runs. Doesn't sync project notes. |
-
-The ribbon icon toggles the sidebar. The kebab (⋯) button at the right of the tab row opens the menu for **Stats**, **Refresh**, **About**, and **Settings**; **Sync** joins that list while you're on the Projects tab.
-
-## Sidebar utilities
-
-- **Stats**: kebab menu → Stats opens a modal showing counts of active TODOs, focused items, snoozed items, ideas, and principles.
-- **Clickable links**: wiki links (`[[page]]`) and external links in TODOs, ideas, and principles are clickable in the sidebar. Disable in Settings → "Make links clickable in lists."
-- **Tab lock**: enable in Settings → "Show tab lock buttons." Adds a padlock icon to Obsidian's own document tab headers (not the plugin's sidebar tabs); locking one forces links you click from the sidebar to open in a new tab instead of replacing what's there.
-
-## Installation
-
-**Requirements:** Obsidian 1.14 or later, desktop only. The Projects tab additionally needs `git` installed and available on your system PATH.
-
-Warped Command isn't in Obsidian's Community Plugins directory yet, and prebuilt files aren't published as GitHub releases yet either. For now, install from source.
-
-### Option 1: install script (recommended)
-
-```bash
-git clone git@github.com:robotpony/warped-command.git
-cd warped-command
-npm install
-./install.sh
-```
-
-`install.sh` builds the plugin and walks you through picking which vault(s) to install into. On later runs, `./install.sh -p` reinstalls to the same vaults without prompting; `./install.sh -d 8` deep-searches for nested vaults.
-
-### Option 2: manual build
-
-```bash
-npm install
-npm run build      # produces main.js at the repo root
-```
-
-Copy `main.js`, `manifest.json`, and `styles.css` into `<vault>/.obsidian/plugins/warped-todo/` (create the folder if it doesn't exist; `warped-todo` is the plugin's internal id, unrelated to the repo or display name). Then in Obsidian, go to Settings → Community plugins and enable "Warped Command."
-
-Having trouble, or hit something unexpected? See [Troubleshooting](TROUBLESHOOTING.md).
-
-## Releases and changelog
-
-Every change is logged in [CHANGELOG.md](CHANGELOG.md), organized by version with Added/Changed/Fixed sections. There's no packaged release yet; build from source (see [Installation](#installation)) to get the current version.
-
-Found a bug or have a feature request? [Open an issue](https://github.com/robotpony/warped-command/issues).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## License
+Mark yourself with `(me)`. The plugin reads the note on load and whenever you edit it. It only writes to it when you ask: **Add @handle to team** in the `@` suggestions, or the **Update team note** command, which adds every handle used on a task line in the vault that isn't listed yet. If the note doesn't exist, Settings › Team offers to create one.
+
+## Other features
+
+- **Quick Add TODO** (`Cmd/Ctrl+Shift+A`) starts a `- [ ] #todo ` item on an empty line, or adds `#todo` to the end of the current one.
+- **Tab lock** adds a padlock to Obsidian's tab headers. A locked tab opens the links you click in a new tab. Turn it on in Settings › Editor.
+- **Title links in a Hugo vault.** If the vault is a Hugo site and its pages link by title (`[[Cherry tomato and garlic spaghetti]]` for `cherry-tomato-and-garlic-spaghetti.md`), the plugin resolves those links by each page's front-matter `title`, so clicking, hover preview, backlinks and the graph all work. Files are never changed. Turn it off with "Resolve wiki links by page title".
+- **Help note.** Settings › Help › Create help note makes `Space Command Help.md`, a note of live examples to try. It's created only when you ask, and never rewritten.
+
+## Commands
+
+| Command | Default hotkey |
+|---|---|
+| Quick Add TODO | `Cmd/Ctrl+Shift+A` |
+| Mark done / reopen | — |
+| Toggle focus | — |
+| Toggle snooze | — |
+| Set priority: P0 … P4 | — |
+| Remove priority | — |
+| Make task from idea | — |
+| Convert to tasks | — |
+| Tidy tags | — |
+| Complete all under heading | — |
+| Sort block at cursor | — |
+| Move TODO to another file | — |
+| Open in Space Command | — |
+| Update team note | — |
+
+Set your own hotkeys in Settings › Hotkeys.
+
+## Settings
+
+| Section | Setting | Default |
+|---|---|---|
+| Editor | Insert date format, used by `@today` and `/today` | `dddd, MMMM Do` |
+| Editor | Show tab lock buttons | Off |
+| Editor | Resolve wiki links by page title (Hugo vaults) | On |
+| Space Command | Show Open in Space Command | On |
+| Space Command | Ribbon icon | Off |
+| Team | Team file path | `team.md` |
+
+## Upgrading from Warped Command
+
+This plugin used to be Warped Command, with a sidebar, Projects, Posts and a vault scanner. Space Command does all of that now, so 1.0.0 drops them and keeps the writing tools. The full list is in the [changelog](CHANGELOG.md).
+
+The plugin id changed from `warped-todo` to `space-command`, so Obsidian sees a new plugin:
+
+- `./install.sh` removes the old `warped-todo` folder and switches it on under the new id. If you install by hand, delete `<vault>/.obsidian/plugins/warped-todo/` yourself and turn the new plugin on.
+- Settings start fresh. Your team note is untouched, but if it isn't at `team.md`, set its path again.
+- The old help note, `Warped Command Help.md`, is yours to keep or delete.
+
+## Changelog, contributing and licence
+
+Every change is in [CHANGELOG.md](CHANGELOG.md); history before 1.0.0 is in [CHANGELOG-ARCHIVE.md](CHANGELOG-ARCHIVE.md). Found a bug? [Open an issue](https://github.com/robotpony/space-command-obsidian/issues). See [CONTRIBUTING.md](CONTRIBUTING.md) to help.
 
 MIT, see [LICENSE](LICENSE).

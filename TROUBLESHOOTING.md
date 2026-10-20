@@ -2,30 +2,38 @@
 
 See the [README](README.md) for what the plugin does and how to install it. This page covers what to do when something isn't working.
 
-**Sidebar won't open.**
-Run "Toggle TODO sidebar" from the command palette, or use the ribbon icon. Default hotkey is `Cmd/Ctrl+Shift+T`.
+**Ticking a box didn't change the tag.**
+That's on purpose in three cases. A box under a tagged heading only toggles, because the heading carries the tag. A box on an idea or principle writes no tag; use **Mark done / reopen** to strike it through. A struck-through line is already done and is left alone.
 
-**A `#todo` I wrote isn't showing up.**
-Check that it's not inside a code block or wrapped in backticks; the scanner skips both so documentation about the tag syntax doesn't get picked up as a real TODO. Also confirm the file isn't in an excluded folder (Settings → excluded folders).
+**A tag command says "Nothing to change."**
+Tag commands act on lines with a task, idea or principle tag, or on the items under a tagged heading. Put the cursor on one, or select the lines. **Convert to tasks** is the one that works on plain lines. **Move TODO to another file** says "Cursor isn't on a TODO, idea, or tagged heading." for the same reason.
 
-**Projects tab is empty.**
-Three common causes: no base folder is set (Settings → Projects → "Projects base folder"), `git` isn't installed or isn't on your PATH, or none of the folders under the base path are git repos with a top-level `.git` directory (submodules are skipped on purpose).
+**Mark done refuses on a heading.**
+A whole block is never completed from its heading, so ideas under it don't get struck by accident. Complete the items one by one, or run **Complete all under heading**, which completes the open tasks only.
 
-**Projects sync isn't picking up a change I made to `BUGS.md` or `TODO.md`.**
-The background watcher should catch it automatically. If it doesn't, run the "Sync Projects" command or use **Sync** in the Projects tab's kebab menu to force a rescan.
+**Open in Space Command does nothing, or says it couldn't open Space Command.**
+Check that Space Command is installed and has been opened at least once, so macOS knows its `spacecommand://` links. If you don't use Space Command, turn off Settings › Space Command › "Show Open in Space Command".
 
-**A prose-style bug write-up won't move to "Fixed."**
-The mover refuses to relocate a block if the file has uncommitted changes, so a mistake can't strand your work partway through a move. Commit or stash first, then try again.
+**A link from Space Command opens the note but not the right line.**
+The plugin lands on the line whose text matches the item, nearest to where Space Command last saw it. If the item's text changed too, it falls back to the line number. Check that you're on Space Command 0.72.0 or later.
 
-**Projects, or the whole plugin, doesn't load on mobile.**
-That's expected. Projects needs Node's `fs` and `child_process`, so the entire plugin is marked desktop only (`isDesktopOnly: true`).
+**`[[Page Title]]` links in my Hugo vault still show as unresolved.**
+Title links only work when the vault's own root is the Hugo site, with `hugo.toml`, `config.yaml` or similar there or under `config/_default/`. The page must sit under the site's `contentDir` and have a `title` in its front matter. Check that "Resolve wiki links by page title" is on.
+
+**My handles aren't suggested after `@`.**
+Check Settings › Team › "Team file path" points at your team note, and that each line looks like `- @handle — Name`.
+
+**The plugin isn't available on my phone.**
+It's desktop only. Switching to Space Command needs the Mac app, and the vault's path on disk.
+
+**I upgraded from Warped Command and my settings are gone.**
+Expected: the plugin id changed from `warped-todo` to `space-command`, so Obsidian treats it as a new plugin. Set the team file path again if yours isn't `team.md`. If the old Warped Command is still listed under Community plugins, delete `<vault>/.obsidian/plugins/warped-todo/`. See [Upgrading from Warped Command](README.md#upgrading-from-warped-command).
 
 **Still stuck?**
-[Open an issue](https://github.com/robotpony/warped-command/issues) with your plugin version (`manifest.json`), Obsidian version, and steps to reproduce.
+[Open an issue](https://github.com/robotpony/space-command-obsidian/issues) with your plugin version (Settings › Community plugins), Obsidian version, and steps to reproduce.
 
 ## Known limitations
 
-- **Desktop only.** The whole plugin, not just Projects, is unavailable on Obsidian mobile.
-- **Not on the Community Plugins list yet.** Install from source (see [README](README.md#installation)) rather than through Obsidian's plugin browser.
-- **Projects tracks folders on disk, not other vaults.** It's for git repos alongside your vault, not for linking two Obsidian vaults together.
-- **Git submodules are skipped** when scanning for project repos.
+- **Desktop only.**
+- **Not in Obsidian's Community Plugins list.** Install from the zip on [space-command.ca](https://space-command.ca), or from source.
+- **No list of your tasks in Obsidian.** That's Space Command's job; this plugin doesn't scan the vault.
