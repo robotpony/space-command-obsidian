@@ -19,5 +19,5 @@
     }
   },
   "include": ["**/*.ts"],
-  "exclude": ["node_modules", "warped-hugo", "warped-reference"]
+  "exclude": ["node_modules"]
 }

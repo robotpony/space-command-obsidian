@@ -1,7 +1,7 @@
 {
   "name": "@space-command-obsidian/shared",
   "version": "1.0.0",
-  "description": "Space Command for Obsidian's own copy of the shared Warped-plugins utilities. Duplicated from the root shared/ at the point of the repo split rather than kept as a package/submodule dependency — drifts independently now.",
+  "description": "Space Command for Obsidian's own copy of the shared plugin utilities, carried over from the old monorepo. Not a package dependency; it drifts independently.",
   "private": true,
   "type": "module",
   "main": "index.ts",
