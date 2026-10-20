@@ -35,7 +35,7 @@ You need Obsidian 1.14 or later, on desktop. Space Command is optional, but most
 
 ### From the release zip
 
-1. Download the zip from [space-command.ca](https://space-command.ca).
+1. Download the zip from [space-command.ca/help/obsidian](https://space-command.ca/help/obsidian/).
 2. Unzip it. You get a `space-command` folder with `main.js`, `manifest.json` and `styles.css`.
 3. Move that folder into `<vault>/.obsidian/plugins/`.
 4. In Obsidian, open Settings › Community plugins.
