@@ -46,6 +46,7 @@ It doesn't scan the vault, keep an index, or write in the background. Every writ
 | File | Purpose |
 |------|---------|
 | [tags.ts](src/tags.ts) | Space Command's tag vocabulary and write rules, pure and line-in/line-out: complete/reopen, strike, priority, focus, snooze, tidy, convert, make task from idea, normalised anchor text. Mirrors Space Command's `Tag.swift`, `TagExtractor.swift`, `Mutator.swift`, `LineEdit.swift`. The only place tag text is edited. |
+| [taskFiles.ts](src/taskFiles.ts) | Space Command's well-known task files (`PLAN.md`, `TODO.md`, `BUGS.md`, `TESTING.md`, …), whose checkboxes are items untagged. Mirrors `TaskFormat.swift`'s `builtIn`. |
 | [blocks.ts](src/blocks.ts) | Pure block model: a heading and its lines, ending at the next heading of any level (Space Command's section rule). |
 | [blockOps.ts](src/blockOps.ts) | Pure block operations: header sort, and cut/append for Move TODO to another file. |
 | [lineOps.ts](src/lineOps.ts) | Pure targeting for tag commands (cursor line, selection, a tagged heading's children) and their per-line edits. |
