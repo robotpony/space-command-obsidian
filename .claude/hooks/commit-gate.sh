@@ -9,8 +9,6 @@
 #   - `git commit -a`/`--all` (same problem, at commit time)
 #   - force-push (`--force`, `-f`, `--force-with-lease`); settings.json
 #     denies these too
-#   - pushing `main`, by refspec or from a checkout on `main`; `main` moves
-#     only when Bruce merges the space-command branch
 #
 # Blocks rather than asks: the command is refused with a reason, so Claude
 # corrects it and runs it again.
