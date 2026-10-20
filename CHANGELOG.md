@@ -6,7 +6,7 @@ All notable changes to the ␣⌘ Warped Command plugin will be documented in th
 
 Built on the `space-command` branch; see PLAN.md. Filled in phase by phase.
 Branch test builds carry their own 0.x numbers (Phase 1 is 0.56.0,
-Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0, Phase 6 is 0.60.0; 0.59.1 and 0.59.2 are fixes).
+Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0, Phase 6 is 0.60.0, the rename is 1.0.0; 0.59.1 and 0.59.2 are fixes).
 
 ### Removed
 
@@ -37,6 +37,14 @@ Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0, Phas
 
 ### Changed
 
+- Renamed to ␣⌘ Space Command for Obsidian. The plugin id is now
+  `space-command` (was `warped-todo`), so Obsidian treats it as a new plugin
+  and settings start fresh. The repo is `space-command-obsidian`, and CSS
+  classes use the `space-command-` prefix.
+- `./install.sh` removes the old `warped-todo` folder from each vault and
+  switches its entry in `community-plugins.json` to `space-command`.
+- The help note is now `Space Command Help.md`, rewritten for writing tasks
+  for Space Command instead of the old sidebar.
 - Checkbox ↔ tag sync is now a CodeMirror transaction filter, following
   Space Command's write rules (`src/tags.ts`). The tag change rides on
   the toggle in one transaction, so a single undo reverts both. Aliases

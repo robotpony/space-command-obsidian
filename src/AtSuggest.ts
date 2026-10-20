@@ -7,7 +7,7 @@ import {
   EditorSuggestTriggerInfo,
   TFile,
 } from "obsidian";
-import { WarpedTodoSettings, TeamMember } from "./types";
+import { SpaceCommandSettings, TeamMember } from "./types";
 import { TeamManager } from "./TeamManager";
 import { formatDate, showNotice } from "./utils";
 import { isValidHandle } from "./mentions";
@@ -24,10 +24,10 @@ interface AtSuggestion {
 }
 
 export class AtSuggest extends EditorSuggest<AtSuggestion> {
-  private settings: WarpedTodoSettings;
+  private settings: SpaceCommandSettings;
   private teamManager: TeamManager;
 
-  constructor(app: App, settings: WarpedTodoSettings, teamManager: TeamManager) {
+  constructor(app: App, settings: SpaceCommandSettings, teamManager: TeamManager) {
     super(app);
     this.settings = settings;
     this.teamManager = teamManager;
@@ -136,7 +136,7 @@ export class AtSuggest extends EditorSuggest<AtSuggestion> {
   }
 
   renderSuggestion(item: AtSuggestion, el: HTMLElement): void {
-    el.addClass("warped-todo-suggestion");
+    el.addClass("space-command-suggestion");
 
     const iconSpan = el.createEl("span", { cls: "suggestion-icon" });
     iconSpan.textContent = item.icon;

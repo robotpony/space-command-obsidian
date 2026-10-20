@@ -24,7 +24,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // main.ts
 var main_exports = {};
 __export(main_exports, {
-  default: () => WarpedTodoPlugin
+  default: () => SpaceCommandPlugin
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian10 = require("obsidian");
@@ -53,7 +53,7 @@ function createNoticeFactory(logoPrefix, logoClass) {
 
 // src/utils.ts
 var LOGO_PREFIX = "\u2423\u2318";
-var showNotice2 = createNoticeFactory(LOGO_PREFIX, "warped-todo-logo");
+var showNotice2 = createNoticeFactory(LOGO_PREFIX, "space-command-logo");
 function formatDate(date, format) {
   return (0, import_obsidian2.moment)(date).format(format);
 }
@@ -201,7 +201,7 @@ var SlashCommandSuggest = class extends import_obsidian3.EditorSuggest {
     );
   }
   renderSuggestion(item, el) {
-    el.addClass("warped-todo-suggestion");
+    el.addClass("space-command-suggestion");
     const iconSpan = el.createEl("span", { cls: "suggestion-icon" });
     iconSpan.textContent = item.icon;
     const textContainer = el.createEl("div", { cls: "suggestion-content" });
@@ -988,7 +988,7 @@ var AtSuggest = class extends import_obsidian4.EditorSuggest {
     return matches;
   }
   renderSuggestion(item, el) {
-    el.addClass("warped-todo-suggestion");
+    el.addClass("space-command-suggestion");
     const iconSpan = el.createEl("span", { cls: "suggestion-icon" });
     iconSpan.textContent = item.icon;
     const textContainer = el.createEl("div", { cls: "suggestion-content" });
@@ -1149,21 +1149,23 @@ var TeamManager = class extends import_obsidian5.Events {
 
 // src/HelpNoteManager.ts
 var import_obsidian6 = require("obsidian");
-var HELP_NOTE_PATH = "Warped Command Help.md";
+var HELP_NOTE_PATH = "Space Command Help.md";
 function buildHelpNoteContent() {
   return `> [!warning] Live example
 > This note is a live example, not documentation. Everything below works exactly like it would in any other note in your vault. Try it.
 
 ## Complete a task
 
-Click the checkbox. The plugin rewrites the tag in place to \`#todone\`.
+Click the checkbox. The plugin rewrites the tag in place to \`#todone\`, and
+Space Command sees it as done.
 
 - [ ] Try checking this box #todo
 
 ## Tag a group of tasks
 
-Tag a heading with \`#todos\` and skip tagging each line underneath. All of
-them show up together in the sidebar, under that heading.
+Tag a heading with \`#todos\` and skip tagging each line underneath. Press
+Enter at the end of the heading and you get a checklist to fill in. The
+heading shows how many are done.
 
 ## Standup notes #todos
 - [ ] First task in the group
@@ -1171,29 +1173,36 @@ them show up together in the sidebar, under that heading.
 
 ## Capture an idea
 
-\`#idea\` works the same way, but lives in its own tab.
+\`#idea\` works the same way. Right-click it and choose "Make task from idea"
+when it's ready to become a task.
 
 Worth trying: a lighter onboarding flow for repeat users. #idea
 
 ## Set priority and focus
 
-Add \`#focus\` to put something at the top of the queue, or \`#p0\`\u2013\`#p4\` for a
-priority tier.
+Add \`#focus\` to put something at the top of Space Command's queue, or
+\`#p0\`\u2013\`#p4\` for a priority tier. Right-click a line for the same
+choices, plus snooze and tidy tags.
 
 - [ ] Ship the thing #todo #focus
 
+## Write faster
+
+- Type \`/\` at the start of a line for \`/todo\`, \`/idea\`, \`/today\`, and callouts.
+- Type \`@\` for dates (\`@today\`, \`@tomorrow\`) and the handles in your team note.
+- Type \`#\` for the tags Space Command knows.
+
 ## Where to go next
 
-Open the sidebar with \`Cmd/Ctrl+Shift+T\` if it isn't already open. For
-everything else, including Projects, mentions, header TODOs, and editor
-shortcuts, see the [full README](https://github.com/robotpony/warped-command/blob/main/README.md).
+Run "Open in Space Command" from the command palette to see this line in
+Space Command. For everything else, see the
+[full README](https://github.com/robotpony/space-command-obsidian/blob/main/README.md).
 
 ---
 
 This note is yours now. Delete it, edit it, or leave it as a running
-scratchpad. Warped Command never overwrites it, and won't bring it back
-if you delete it. To get a fresh copy, use Settings \u2192 Help \u2192 "Create
-help note".
+scratchpad. The plugin never overwrites it, and won't bring it back if you
+delete it. To get a fresh copy, use Settings \u2192 Help \u2192 "Create help note".
 `;
 }
 var HelpNoteManager = class {
@@ -1487,7 +1496,7 @@ var TabLockManager = class {
       console.log(`[TabLockManager] Skipping non-markdown tab: data-type="${dataType}"`);
       return;
     }
-    const existingBtn = tabHeader.querySelector(".warped-todo-tab-lock-btn");
+    const existingBtn = tabHeader.querySelector(".space-command-tab-lock-btn");
     if (existingBtn) {
       const isPinned2 = leaf.pinned === true;
       this.updateButtonState(existingBtn, isPinned2);
@@ -1501,7 +1510,7 @@ var TabLockManager = class {
     console.log(`[TabLockManager] Adding button to leaf`);
     const closeButton = innerContainer.querySelector(".workspace-tab-header-inner-close-button");
     const lockBtn = document.createElement("div");
-    lockBtn.className = "warped-todo-tab-lock-btn workspace-tab-header-status-icon";
+    lockBtn.className = "space-command-tab-lock-btn workspace-tab-header-status-icon";
     lockBtn.setAttribute("aria-label", "Lock tab (pinned tabs open links in new tabs)");
     const isPinned = leaf.pinned === true;
     this.updateButtonState(lockBtn, isPinned);
@@ -1529,9 +1538,9 @@ var TabLockManager = class {
     );
     if (!pinContainer)
       return;
-    if (pinContainer.hasAttribute("data-warped-todo-pin-handler"))
+    if (pinContainer.hasAttribute("data-space-command-pin-handler"))
       return;
-    pinContainer.setAttribute("data-warped-todo-pin-handler", "true");
+    pinContainer.setAttribute("data-space-command-pin-handler", "true");
     pinContainer.addEventListener(
       "click",
       (e) => {
@@ -1541,7 +1550,7 @@ var TabLockManager = class {
         e.stopPropagation();
         e.preventDefault();
         leaf.setPinned(false);
-        tabHeader.classList.remove("warped-todo-tab-locked");
+        tabHeader.classList.remove("space-command-tab-locked");
         this.updateButtonState(lockBtn, false);
       },
       { capture: true }
@@ -1555,7 +1564,7 @@ var TabLockManager = class {
     button.setAttribute("aria-label", isPinned ? "Unlock tab" : "Lock tab");
     const tabHeader = button.closest(".workspace-tab-header");
     if (tabHeader) {
-      tabHeader.classList.toggle("warped-todo-tab-locked", isPinned);
+      tabHeader.classList.toggle("space-command-tab-locked", isPinned);
     }
     button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>`;
   }
@@ -1563,17 +1572,17 @@ var TabLockManager = class {
    * Remove all lock buttons and cleanup.
    */
   removeAllButtons() {
-    const buttons = document.querySelectorAll(".warped-todo-tab-lock-btn");
+    const buttons = document.querySelectorAll(".space-command-tab-lock-btn");
     buttons.forEach((btn) => btn.remove());
-    const lockedTabs = document.querySelectorAll(".warped-todo-tab-locked");
+    const lockedTabs = document.querySelectorAll(".space-command-tab-locked");
     lockedTabs.forEach(
-      (tab) => tab.classList.remove("warped-todo-tab-locked")
+      (tab) => tab.classList.remove("space-command-tab-locked")
     );
     const pinContainers = document.querySelectorAll(
-      "[data-warped-todo-pin-handler]"
+      "[data-space-command-pin-handler]"
     );
     pinContainers.forEach(
-      (container) => container.removeAttribute("data-warped-todo-pin-handler")
+      (container) => container.removeAttribute("data-space-command-pin-handler")
     );
   }
 };
@@ -1793,7 +1802,7 @@ var ProgressWidget = class extends import_view.WidgetType {
   }
   toDOM() {
     const el = document.createElement("span");
-    el.className = "warped-todo-heading-progress";
+    el.className = "space-command-heading-progress";
     if (this.done === this.total)
       el.classList.add("is-complete");
     el.textContent = `${this.done}/${this.total}`;
@@ -2215,7 +2224,7 @@ var TagSuggest = class extends import_obsidian8.EditorSuggest {
     return [...vocabulary, ...vault];
   }
   renderSuggestion(item, el) {
-    el.addClass("warped-todo-suggestion");
+    el.addClass("space-command-suggestion");
     const content = el.createEl("div", { cls: "suggestion-content" });
     content.createEl("span", { cls: "suggestion-name", text: item.tag });
     content.createEl("span", { cls: "suggestion-description", text: item.hint });
@@ -2483,7 +2492,7 @@ var HugoTitleLinkResolver = class {
         cache.queueFileForLinkResolution(file);
       }
     } catch (error) {
-      console.error("[Warped Todo]", "Couldn't re-resolve links after a title change:", error);
+      console.error("[Space Command]", "Couldn't re-resolve links after a title change:", error);
     }
   }
 };
@@ -2718,7 +2727,7 @@ function registerAppSwitch(plugin, settings) {
 }
 
 // main.ts
-var WarpedTodoPlugin = class extends import_obsidian10.Plugin {
+var SpaceCommandPlugin = class extends import_obsidian10.Plugin {
   constructor() {
     super(...arguments);
     this.spaceCommandRibbon = null;
@@ -2808,7 +2817,7 @@ var WarpedTodoPlugin = class extends import_obsidian10.Plugin {
       })
     );
     this.app.workspace.onLayoutReady(() => void this.updateTitleLinkResolver());
-    this.addSettingTab(new WarpedTodoSettingTab(this.app, this));
+    this.addSettingTab(new SpaceCommandSettingTab(this.app, this));
   }
   /**
    * Turns title-based wiki links on or off per the setting and whether the
@@ -2915,12 +2924,12 @@ function chooseVaultPath(vault, kind, title, currentValue) {
     const relative = chosen === basePath2 ? "" : chosen.slice(basePath2.length + 1).split(import_path.sep).join("/");
     return kind === "folder" && relative ? `${relative}/` : relative;
   } catch (error) {
-    console.error("[Warped Todo]", "Failed to open picker:", error);
+    console.error("[Space Command]", "Failed to open picker:", error);
     showNotice2("Couldn't open the picker. See console for details.");
     return null;
   }
 }
-var WarpedTodoSettingTab = class extends import_obsidian10.PluginSettingTab {
+var SpaceCommandSettingTab = class extends import_obsidian10.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     // Sticky across display() re-renders: true once the user explicitly picks
@@ -2932,14 +2941,14 @@ var WarpedTodoSettingTab = class extends import_obsidian10.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Warped Command Settings" });
-    const aboutSection = containerEl.createEl("div", { cls: "warped-todo-about-section" });
+    containerEl.createEl("h2", { text: "Space Command for Obsidian Settings" });
+    const aboutSection = containerEl.createEl("div", { cls: "space-command-about-section" });
     const aboutHeader = aboutSection.createEl("div", { cls: "about-header" });
-    aboutHeader.createEl("span", { cls: "warped-todo-logo about-logo", text: "\u2423\u2318" });
-    aboutHeader.createEl("span", { cls: "about-title", text: "Warped Command" });
+    aboutHeader.createEl("span", { cls: "space-command-logo about-logo", text: "\u2423\u2318" });
+    aboutHeader.createEl("span", { cls: "about-title", text: "Space Command for Obsidian" });
     aboutSection.createEl("p", {
       cls: "about-blurb",
-      text: "Focus on the right next task. Simple TODOs and tags in your markdown, surfaced when you need them."
+      text: "Write tasks, ideas and tags in your notes. Space Command finds and tracks them."
     });
     aboutSection.createEl("p", { cls: "about-version", text: `Version ${this.plugin.manifest.version}` });
     const aboutDetails = aboutSection.createEl("div", { cls: "about-details" });
@@ -2947,7 +2956,7 @@ var WarpedTodoSettingTab = class extends import_obsidian10.PluginSettingTab {
     aboutDetails.appendText(" \xB7 ");
     aboutDetails.createEl("a", {
       text: "GitHub",
-      href: "https://github.com/robotpony/warped-command/blob/main/README.md"
+      href: "https://github.com/robotpony/space-command-obsidian/blob/main/README.md"
     });
     containerEl.createEl("h3", { text: "Editor" });
     const insertFormatIsPreset = DATE_FORMAT_PRESETS.some(
@@ -3056,13 +3065,13 @@ var WarpedTodoSettingTab = class extends import_obsidian10.PluginSettingTab {
     }
     const team = this.plugin.teamManager.getTeam();
     if (team.length > 0) {
-      const teamList = containerEl.createEl("div", { cls: "warped-todo-team-list" });
+      const teamList = containerEl.createEl("div", { cls: "space-command-team-list" });
       for (const member of team) {
-        const entry = teamList.createEl("div", { cls: "warped-todo-team-entry" });
-        entry.createEl("span", { cls: "warped-todo-team-handle", text: `@${member.handle}` });
-        entry.createEl("span", { cls: "warped-todo-team-name", text: member.name });
+        const entry = teamList.createEl("div", { cls: "space-command-team-entry" });
+        entry.createEl("span", { cls: "space-command-team-handle", text: `@${member.handle}` });
+        entry.createEl("span", { cls: "space-command-team-name", text: member.name });
         if (member.isMe) {
-          entry.createEl("span", { cls: "warped-todo-team-me-badge", text: "(me)" });
+          entry.createEl("span", { cls: "space-command-team-me-badge", text: "(me)" });
         }
       }
     }

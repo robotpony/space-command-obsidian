@@ -1,6 +1,6 @@
 # Shared Utilities
 
-Warped Command's own copy of a small set of shared Obsidian-plugin utilities, carried over from before this repo was flattened to a single plugin (see `package.json`'s description). No longer synced with any sibling plugin — this copy drifts independently.
+Space Command for Obsidian's own copy of a small set of shared Obsidian-plugin utilities, carried over from before this repo was flattened to a single plugin (see `package.json`'s description). No longer synced with any sibling plugin — this copy drifts independently.
 
 ## Modules
 
@@ -12,7 +12,7 @@ Styled notice display with plugin branding.
 import { createNoticeFactory } from "../shared";
 
 // Create a factory for your plugin
-const showNotice = createNoticeFactory("␣⌘", "warped-todo-logo");
+const showNotice = createNoticeFactory("␣⌘", "space-command-logo");
 
 // Use it throughout your plugin
 showNotice("Task completed");

@@ -2,7 +2,7 @@ import { StateEffect, StateField } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView } from "@codemirror/view";
 import { Editor, FileSystemAdapter, MarkdownView, Plugin, TFile } from "obsidian";
 import { landingLine, lineAnchor, revealUrl, vaultRelativePath } from "./landing";
-import { WarpedTodoSettings } from "./types";
+import { SpaceCommandSettings } from "./types";
 import { showNotice } from "./utils";
 
 /**
@@ -137,7 +137,7 @@ export function openActiveInSpaceCommand(plugin: Plugin): void {
   openInSpaceCommand(plugin, file, view?.getMode() === "source" ? view.editor : undefined);
 }
 
-export function registerAppSwitch(plugin: Plugin, settings: () => WarpedTodoSettings): void {
+export function registerAppSwitch(plugin: Plugin, settings: () => SpaceCommandSettings): void {
   plugin.registerEditorExtension(landedLineExtension);
 
   plugin.addCommand({

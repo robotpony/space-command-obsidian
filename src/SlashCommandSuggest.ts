@@ -7,7 +7,7 @@ import {
   EditorSuggestTriggerInfo,
   TFile,
 } from "obsidian";
-import { WarpedTodoSettings } from "./types";
+import { SpaceCommandSettings } from "./types";
 import { formatDate } from "./utils";
 
 interface SlashCommand {
@@ -42,11 +42,11 @@ const CALLOUT_TYPES: CalloutType[] = [
 type SuggestionItem = SlashCommand | CalloutType;
 
 export class SlashCommandSuggest extends EditorSuggest<SuggestionItem> {
-  private settings: WarpedTodoSettings;
+  private settings: SpaceCommandSettings;
   private inCalloutMenu: boolean = false;
   private triggerStart: EditorPosition | null = null;
 
-  constructor(app: App, settings: WarpedTodoSettings) {
+  constructor(app: App, settings: SpaceCommandSettings) {
     super(app);
     this.settings = settings;
   }
@@ -186,7 +186,7 @@ export class SlashCommandSuggest extends EditorSuggest<SuggestionItem> {
   }
 
   renderSuggestion(item: SuggestionItem, el: HTMLElement): void {
-    el.addClass("warped-todo-suggestion");
+    el.addClass("space-command-suggestion");
 
     const iconSpan = el.createEl("span", { cls: "suggestion-icon" });
     iconSpan.textContent = item.icon;

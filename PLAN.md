@@ -178,14 +178,14 @@ Jumping to a line is the weak spot today (`obsidian://open` has no line without 
 
 You said docs come after the code. This phase is where the rebrand lands in one go.
 
-- [ ] Plugin id `warped-todo` → `space-command`, name "␣⌘ Space Command for Obsidian", version 1.0.0. Update `install.sh` (and remove the old `warped-todo` folder it installed).
+- [x] Plugin id `warped-todo` → `space-command`, name "␣⌘ Space Command for Obsidian", version 1.0.0. Update `install.sh` (and remove the old `warped-todo` folder it installed). Done 2026-10-20: `install.sh` also swaps the id in each vault's `community-plugins.json` so the plugin stays enabled.
 - [ ] Rewrite `README.md`, `CLAUDE.md`, `DESIGN.md` (largely deleted), `plugin-conventions.md`, `TROUBLESHOOTING.md`, `CONTRIBUTING.md`; archive `CHANGELOG.md`'s pre-cut history; empty `BUGS.md`.
-- [ ] Help note rewritten to point at Space Command; created once on first install only (already the rule), and through Settings › Help on demand.
-- [ ] Notice/branding in `src/shared/ui`: keep `␣⌘`, rename CSS prefixes as part of the styles purge.
+- [x] Help note rewritten to point at Space Command (`Space Command Help.md`); created once on first install only (already the rule), and through Settings › Help on demand.
+- [x] Notice/branding in `src/shared/ui`: keep `␣⌘`, rename CSS prefixes as part of the styles purge (`warped-todo-` → `space-command-`).
 - [ ] Release zip (`main.js`, `manifest.json`, `styles.css`) with one-step-per-line install instructions; a page and link on space-command.ca (Space Command side).
 - [ ] (Bruce) Run the hand tests in `TESTING.md` (W1–W15) and Space Command's T15 before the merge.
 - [ ] Merge `space-command` into `main`; push only when Bruce asks.
-- [ ] (Bruce, after testing) Move or merge this GitHub repo. Leaning towards merging it into the space-command repo rather than renaming it in place; decided once 1.0.0 is tested.
+- [x] (Bruce, after testing) Move or merge this GitHub repo. Renamed to `robotpony/space-command-obsidian` on 2026-10-20. Leaning towards merging it into the space-command repo rather than renaming it in place; decided once 1.0.0 is tested.
 - [ ] Hand the result back to the commander so obsidian-command.md and Space Command's PLAN.md get ticked.
 
 ## What stays, at a glance

@@ -4,7 +4,7 @@ export interface TeamMember {
   isMe: boolean;
 }
 
-export interface WarpedTodoSettings {
+export interface SpaceCommandSettings {
   /** Format @today/@tomorrow/@yesterday/@date and /today, /tomorrow insert into note text. Free-form (see DATE_FORMAT_PRESETS in utils.ts) since nothing parses these back out. */
   insertDateFormat: string;
   // Tab lock settings
@@ -21,7 +21,7 @@ export interface WarpedTodoSettings {
   showSpaceCommandRibbon: boolean;
 }
 
-export const DEFAULT_SETTINGS: WarpedTodoSettings = {
+export const DEFAULT_SETTINGS: SpaceCommandSettings = {
   insertDateFormat: "dddd, MMMM Do",
   // Tab lock settings
   showTabLockButton: false,

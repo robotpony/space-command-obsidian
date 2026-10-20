@@ -3,7 +3,7 @@ import { App, TFile } from "obsidian";
 /** Fixed vault-root path for the help note. Not user-configurable
  * (unlike teamFilePath) — it's plugin-authored seed content, not something
  * that needs pointing at an existing file. */
-export const HELP_NOTE_PATH = "Warped Command Help.md";
+export const HELP_NOTE_PATH = "Space Command Help.md";
 
 function buildHelpNoteContent(): string {
   return `> [!warning] Live example
@@ -11,14 +11,16 @@ function buildHelpNoteContent(): string {
 
 ## Complete a task
 
-Click the checkbox. The plugin rewrites the tag in place to \`#todone\`.
+Click the checkbox. The plugin rewrites the tag in place to \`#todone\`, and
+Space Command sees it as done.
 
 - [ ] Try checking this box #todo
 
 ## Tag a group of tasks
 
-Tag a heading with \`#todos\` and skip tagging each line underneath. All of
-them show up together in the sidebar, under that heading.
+Tag a heading with \`#todos\` and skip tagging each line underneath. Press
+Enter at the end of the heading and you get a checklist to fill in. The
+heading shows how many are done.
 
 ## Standup notes #todos
 - [ ] First task in the group
@@ -26,29 +28,36 @@ them show up together in the sidebar, under that heading.
 
 ## Capture an idea
 
-\`#idea\` works the same way, but lives in its own tab.
+\`#idea\` works the same way. Right-click it and choose "Make task from idea"
+when it's ready to become a task.
 
 Worth trying: a lighter onboarding flow for repeat users. #idea
 
 ## Set priority and focus
 
-Add \`#focus\` to put something at the top of the queue, or \`#p0\`–\`#p4\` for a
-priority tier.
+Add \`#focus\` to put something at the top of Space Command's queue, or
+\`#p0\`–\`#p4\` for a priority tier. Right-click a line for the same
+choices, plus snooze and tidy tags.
 
 - [ ] Ship the thing #todo #focus
 
+## Write faster
+
+- Type \`/\` at the start of a line for \`/todo\`, \`/idea\`, \`/today\`, and callouts.
+- Type \`@\` for dates (\`@today\`, \`@tomorrow\`) and the handles in your team note.
+- Type \`#\` for the tags Space Command knows.
+
 ## Where to go next
 
-Open the sidebar with \`Cmd/Ctrl+Shift+T\` if it isn't already open. For
-everything else, including Projects, mentions, header TODOs, and editor
-shortcuts, see the [full README](https://github.com/robotpony/warped-command/blob/main/README.md).
+Run "Open in Space Command" from the command palette to see this line in
+Space Command. For everything else, see the
+[full README](https://github.com/robotpony/space-command-obsidian/blob/main/README.md).
 
 ---
 
 This note is yours now. Delete it, edit it, or leave it as a running
-scratchpad. Warped Command never overwrites it, and won't bring it back
-if you delete it. To get a fresh copy, use Settings → Help → "Create
-help note".
+scratchpad. The plugin never overwrites it, and won't bring it back if you
+delete it. To get a fresh copy, use Settings → Help → "Create help note".
 `;
 }
 

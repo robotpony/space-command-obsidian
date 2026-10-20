@@ -5,10 +5,10 @@ import { createNoticeFactory } from "./shared";
 export const LOGO_PREFIX = "␣⌘";
 
 /**
- * Show a notice with the styled Warped Todo logo badge.
+ * Show a notice with the styled Space Command logo badge.
  * Uses the shared notice factory pattern.
  */
-export const showNotice = createNoticeFactory(LOGO_PREFIX, "warped-todo-logo");
+export const showNotice = createNoticeFactory(LOGO_PREFIX, "space-command-logo");
 
 export function formatDate(date: Date, format: string): string {
   return (moment as any)(date).format(format);

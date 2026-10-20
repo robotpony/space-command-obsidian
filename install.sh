@@ -2,7 +2,7 @@
 
 # Obsidian Plugin Installer
 # Builds the plugin and installs it into selected Obsidian vaults.
-# Generic across Warped plugin repos — reads the plugin's identity from
+# Generic across plugin repos — reads the plugin's identity from
 # manifest.json, nothing here is hardcoded to a specific plugin.
 
 set -e
@@ -253,6 +253,40 @@ install_plugin() {
 
     local display_path="${target_dir/#$HOME/~}"
     print_success "$display_path"
+
+    remove_legacy_ids "$vault_dir"
+}
+
+# Ids this plugin was installed under before a rename. Their folders are
+# removed (nothing migrates), and an enabled entry in community-plugins.json
+# is switched to the current id so the plugin stays on.
+LEGACY_IDS=(warped-todo)
+
+remove_legacy_ids() {
+    local vault_dir="$1"
+    local enabled_file="$vault_dir/.obsidian/community-plugins.json"
+
+    for old_id in $LEGACY_IDS; do
+        [[ "$old_id" == "$PLUGIN_NAME" ]] && continue
+
+        local old_dir="$vault_dir/.obsidian/plugins/$old_id"
+        if [[ -d "$old_dir" ]]; then
+            rm -rf "$old_dir"
+            print_warn "Removed old ${old_dir/#$HOME/~}"
+        fi
+
+        if [[ -f "$enabled_file" ]] && grep -q "\"$old_id\"" "$enabled_file"; then
+            # Swap the old id for the new one, or drop it if both are listed.
+            node -e '
+                const fs = require("fs");
+                const [file, oldId, newId] = process.argv.slice(1);
+                const ids = JSON.parse(fs.readFileSync(file, "utf8"));
+                const next = ids.includes(newId) ? ids.filter((id) => id !== oldId) : ids.map((id) => (id === oldId ? newId : id));
+                fs.writeFileSync(file, JSON.stringify(next, null, 2));
+            ' "$enabled_file" "$old_id" "$PLUGIN_NAME" || { print_error "Couldn't update $enabled_file"; continue; }
+            print_warn "Enabled $PLUGIN_NAME in place of $old_id (reload Obsidian)"
+        fi
+    done
 }
 
 # --- Main ---

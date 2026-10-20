@@ -76,7 +76,7 @@ export class TagSuggest extends EditorSuggest<TagSuggestion> {
   }
 
   renderSuggestion(item: TagSuggestion, el: HTMLElement): void {
-    el.addClass("warped-todo-suggestion");
+    el.addClass("space-command-suggestion");
     const content = el.createEl("div", { cls: "suggestion-content" });
     content.createEl("span", { cls: "suggestion-name", text: item.tag });
     content.createEl("span", { cls: "suggestion-description", text: item.hint });

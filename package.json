@@ -1,7 +1,7 @@
 {
-  "name": "warped-command",
-  "version": "0.60.0",
-  "description": "Warped Command - Obsidian plugin for managing TODOs, TODONEs, and workflows",
+  "name": "space-command-obsidian",
+  "version": "1.0.0",
+  "description": "Space Command for Obsidian - an in-editor authoring companion for Space Command: tags, dates, handles, checklists and blocks",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

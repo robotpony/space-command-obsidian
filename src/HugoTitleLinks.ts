@@ -248,7 +248,7 @@ export class HugoTitleLinkResolver {
         cache.queueFileForLinkResolution(file);
       }
     } catch (error) {
-      console.error("[Warped Todo]", "Couldn't re-resolve links after a title change:", error);
+      console.error("[Space Command]", "Couldn't re-resolve links after a title change:", error);
     }
   }
 }

@@ -1,7 +1,7 @@
 /* Space Command Plugin Styles */
 
 /* Logo styling */
-.warped-todo-logo {
+.space-command-logo {
   display: inline-block;
   background-color: #689fd6;
   color: white;
@@ -15,42 +15,42 @@
 }
 
 /* About Section in Settings */
-.warped-todo-about-section {
+.space-command-about-section {
   background-color: var(--background-secondary);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 24px;
 }
 
-.warped-todo-about-section .about-header {
+.space-command-about-section .about-header {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 8px;
 }
 
-.warped-todo-about-section .about-logo {
+.space-command-about-section .about-logo {
   font-size: 1.2em;
 }
 
-.warped-todo-about-section .about-title {
+.space-command-about-section .about-title {
   font-weight: 600;
   font-size: 1.1em;
 }
 
-.warped-todo-about-section .about-blurb {
+.space-command-about-section .about-blurb {
   color: var(--text-muted);
   margin: 0 0 12px 0;
   font-size: 0.95em;
   line-height: 1.4;
 }
 
-.warped-todo-about-section .about-details {
+.space-command-about-section .about-details {
   font-size: 0.85em;
   color: var(--text-muted);
 }
 
-.warped-todo-about-section .about-details a {
+.space-command-about-section .about-details a {
   color: var(--text-accent);
 }
 
@@ -143,7 +143,7 @@ body.theme-light {
 }
 
 /* Heading progress ("3/7"), beside the sort button */
-.warped-todo-heading-progress {
+.space-command-heading-progress {
   margin-left: 8px;
   padding: 0 6px;
   border-radius: 5px;
@@ -155,7 +155,7 @@ body.theme-light {
   vertical-align: middle;
 }
 
-.warped-todo-heading-progress.is-complete {
+.space-command-heading-progress.is-complete {
   color: var(--sc-faint);
 }
 
@@ -170,33 +170,33 @@ body.theme-light {
 }
 
 /* Slash Command & Date Suggest Styles */
-.warped-todo-suggestion {
+.space-command-suggestion {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
 }
 
-.warped-todo-suggestion .suggestion-icon {
+.space-command-suggestion .suggestion-icon {
   font-size: 16px;
   width: 24px;
   text-align: center;
   flex-shrink: 0;
 }
 
-.warped-todo-suggestion .suggestion-content {
+.space-command-suggestion .suggestion-content {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.warped-todo-suggestion .suggestion-name {
+.space-command-suggestion .suggestion-name {
   font-weight: 500;
   color: var(--text-normal);
 }
 
-.warped-todo-suggestion .suggestion-description {
+.space-command-suggestion .suggestion-description {
   font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
@@ -232,7 +232,7 @@ body.theme-light {
 }
 
 /* Tab Lock Button Styles */
-.warped-todo-tab-lock-btn {
+.space-command-tab-lock-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -245,35 +245,35 @@ body.theme-light {
   flex-shrink: 0;
 }
 
-.warped-todo-tab-lock-btn:hover {
+.space-command-tab-lock-btn:hover {
   opacity: 0.8;
   background-color: var(--background-modifier-hover);
 }
 
-.warped-todo-tab-lock-btn svg {
+.space-command-tab-lock-btn svg {
   display: block;
 }
 
 /* When tab is locked: hide lock button and close button, show only Obsidian's pushpin */
-.warped-todo-tab-locked .warped-todo-tab-lock-btn {
+.space-command-tab-locked .space-command-tab-lock-btn {
   display: none;
 }
 
-.warped-todo-tab-locked .workspace-tab-header-inner-close-button {
+.space-command-tab-locked .workspace-tab-header-inner-close-button {
   display: none;
 }
 
 /* Make the pin icon clickable when locked */
-.warped-todo-tab-locked .workspace-tab-header-status-container {
+.space-command-tab-locked .workspace-tab-header-status-container {
   cursor: pointer;
 }
 
 /* Team list in settings */
-.warped-todo-team-list {
+.space-command-team-list {
   margin-top: 8px;
 }
 
-.warped-todo-team-entry {
+.space-command-team-entry {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -281,17 +281,17 @@ body.theme-light {
   font-size: 13px;
 }
 
-.warped-todo-team-handle {
+.space-command-team-handle {
   font-family: var(--font-monospace);
   font-size: 12px;
   color: var(--text-muted);
 }
 
-.warped-todo-team-name {
+.space-command-team-name {
   color: var(--text-normal);
 }
 
-.warped-todo-team-me-badge {
+.space-command-team-me-badge {
   font-size: 11px;
   color: var(--interactive-accent);
   opacity: 0.8;

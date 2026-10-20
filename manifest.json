@@ -1,10 +1,10 @@
 {
-  "id": "warped-todo",
-  "name": "Warped Command",
-  "version": "0.60.0",
+  "id": "space-command",
+  "name": "␣⌘ Space Command for Obsidian",
+  "version": "1.0.0",
   "minAppVersion": "1.14.0",
-  "description": "Tools for managing TODOs, TODONEs, and project tracking across your vault, with an interactive sidebar.",
+  "description": "Write tasks in your vault for Space Command: tags, dates, handles, checklists and blocks, and switching between the two apps.",
   "author": "Bruce Alderson",
-  "authorUrl": "https://github.com/robotpony/warped-command",
+  "authorUrl": "https://github.com/robotpony/space-command-obsidian",
   "isDesktopOnly": true
 }

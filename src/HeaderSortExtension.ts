@@ -85,7 +85,7 @@ class ProgressWidget extends WidgetType {
 
   toDOM(): HTMLElement {
     const el = document.createElement("span");
-    el.className = "warped-todo-heading-progress";
+    el.className = "space-command-heading-progress";
     if (this.done === this.total) el.classList.add("is-complete");
     el.textContent = `${this.done}/${this.total}`;
     el.setAttribute("aria-label", `${this.done} of ${this.total} done`);

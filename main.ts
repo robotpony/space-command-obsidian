@@ -13,7 +13,7 @@ import { SlashCommandSuggest } from "./src/SlashCommandSuggest";
 import { AtSuggest } from "./src/AtSuggest";
 import { TeamManager } from "./src/TeamManager";
 import { HELP_NOTE_PATH, HelpNoteManager } from "./src/HelpNoteManager";
-import { WarpedTodoSettings, DEFAULT_SETTINGS } from "./src/types";
+import { SpaceCommandSettings, DEFAULT_SETTINGS } from "./src/types";
 import { pluralize, showNotice, formatDate, DATE_FORMAT_PRESETS } from "./src/utils";
 import { MoveTargetModal } from "./src/MoveTargetModal";
 import { TabLockManager } from "./src/TabLockManager";
@@ -26,8 +26,8 @@ import { registerTagSuggest } from "./src/TagSuggest";
 import { detectVaultContentPrefix, HugoTitleLinkResolver } from "./src/HugoTitleLinks";
 import { openActiveInSpaceCommand, registerAppSwitch } from "./src/AppSwitch";
 
-export default class WarpedTodoPlugin extends Plugin {
-  settings: WarpedTodoSettings;
+export default class SpaceCommandPlugin extends Plugin {
+  settings: SpaceCommandSettings;
   tabLockManager: TabLockManager;
   teamManager: TeamManager;
   helpNoteManager: HelpNoteManager;
@@ -151,7 +151,7 @@ export default class WarpedTodoPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => void this.updateTitleLinkResolver());
 
     // Add settings tab
-    this.addSettingTab(new WarpedTodoSettingTab(this.app, this));
+    this.addSettingTab(new SpaceCommandSettingTab(this.app, this));
   }
 
   /**
@@ -240,7 +240,7 @@ export default class WarpedTodoPlugin extends Plugin {
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
       if (key in saved) settings[key] = saved[key];
     }
-    this.settings = settings as unknown as WarpedTodoSettings;
+    this.settings = settings as unknown as SpaceCommandSettings;
   }
 
   async saveSettings() {
@@ -284,20 +284,20 @@ function chooseVaultPath(vault: Vault, kind: "file" | "folder", title: string, c
     const relative = chosen === basePath ? "" : chosen.slice(basePath.length + 1).split(sep).join("/");
     return kind === "folder" && relative ? `${relative}/` : relative;
   } catch (error) {
-    console.error("[Warped Todo]", "Failed to open picker:", error);
+    console.error("[Space Command]", "Failed to open picker:", error);
     showNotice("Couldn't open the picker. See console for details.");
     return null;
   }
 }
 
-class WarpedTodoSettingTab extends PluginSettingTab {
-  plugin: WarpedTodoPlugin;
+class SpaceCommandSettingTab extends PluginSettingTab {
+  plugin: SpaceCommandPlugin;
   // Sticky across display() re-renders: true once the user explicitly picks
   // "Custom…" in the insert date format dropdown, so the text field stays
   // visible even if what they type happens to match a preset's format string.
   private showCustomInsertDateFormat = false;
 
-  constructor(app: App, plugin: WarpedTodoPlugin) {
+  constructor(app: App, plugin: SpaceCommandPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
@@ -306,17 +306,17 @@ class WarpedTodoSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Warped Command Settings" });
+    containerEl.createEl("h2", { text: "Space Command for Obsidian Settings" });
 
     // About section
-    const aboutSection = containerEl.createEl("div", { cls: "warped-todo-about-section" });
+    const aboutSection = containerEl.createEl("div", { cls: "space-command-about-section" });
     const aboutHeader = aboutSection.createEl("div", { cls: "about-header" });
-    aboutHeader.createEl("span", { cls: "warped-todo-logo about-logo", text: "␣⌘" });
-    aboutHeader.createEl("span", { cls: "about-title", text: "Warped Command" });
+    aboutHeader.createEl("span", { cls: "space-command-logo about-logo", text: "␣⌘" });
+    aboutHeader.createEl("span", { cls: "about-title", text: "Space Command for Obsidian" });
 
     aboutSection.createEl("p", {
       cls: "about-blurb",
-      text: "Focus on the right next task. Simple TODOs and tags in your markdown, surfaced when you need them.",
+      text: "Write tasks, ideas and tags in your notes. Space Command finds and tracks them.",
     });
 
     aboutSection.createEl("p", { cls: "about-version", text: `Version ${this.plugin.manifest.version}` });
@@ -326,7 +326,7 @@ class WarpedTodoSettingTab extends PluginSettingTab {
     aboutDetails.appendText(" · ");
     aboutDetails.createEl("a", {
       text: "GitHub",
-      href: "https://github.com/robotpony/warped-command/blob/main/README.md",
+      href: "https://github.com/robotpony/space-command-obsidian/blob/main/README.md",
     });
 
     // Editor section
@@ -491,13 +491,13 @@ class WarpedTodoSettingTab extends PluginSettingTab {
 
     const team = this.plugin.teamManager.getTeam();
     if (team.length > 0) {
-      const teamList = containerEl.createEl("div", { cls: "warped-todo-team-list" });
+      const teamList = containerEl.createEl("div", { cls: "space-command-team-list" });
       for (const member of team) {
-        const entry = teamList.createEl("div", { cls: "warped-todo-team-entry" });
-        entry.createEl("span", { cls: "warped-todo-team-handle", text: `@${member.handle}` });
-        entry.createEl("span", { cls: "warped-todo-team-name", text: member.name });
+        const entry = teamList.createEl("div", { cls: "space-command-team-entry" });
+        entry.createEl("span", { cls: "space-command-team-handle", text: `@${member.handle}` });
+        entry.createEl("span", { cls: "space-command-team-name", text: member.name });
         if (member.isMe) {
-          entry.createEl("span", { cls: "warped-todo-team-me-badge", text: "(me)" });
+          entry.createEl("span", { cls: "space-command-team-me-badge", text: "(me)" });
         }
       }
     }
