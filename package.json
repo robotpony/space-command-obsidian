@@ -1,6 +1,6 @@
 {
   "name": "space-command-obsidian",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Space Command for Obsidian - an in-editor authoring companion for Space Command: tags, dates, handles, checklists and blocks",
   "main": "main.js",
   "scripts": {

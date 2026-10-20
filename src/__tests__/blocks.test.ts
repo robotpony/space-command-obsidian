@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { blockAtHeading, findBlock, headingLevel, listItemEnd } from "../blocks";
-import { appendMoved, cutForMove, isMovableLine, sortBlock, taggedBlockAt, toCharChange } from "../blockOps";
+import { appendMoved, cutForMove, isMovableLine, sortableBlockAt, sortBlock, taggedBlockAt, toCharChange } from "../blockOps";
+import { taskFileKind } from "../taskFiles";
 import { createCheckboxSyncExtension } from "../CheckboxSyncExtension";
 
 const doc = (...lines: string[]) => lines;
@@ -232,5 +233,45 @@ describe("checkbox sync extension", () => {
   it("ignores edits that don't flip a box", () => {
     const s = state("- [ ] a #todo");
     expect(s.update({ changes: { from: 13, insert: " #p1" } }).newDoc.toString()).toBe("- [ ] a #todo #p1");
+  });
+});
+
+describe("well-known task files", () => {
+  it("matches Space Command's names in any folder, ignoring case", () => {
+    expect(taskFileKind("PLAN.md")).toBe("task");
+    expect(taskFileKind("projects/app/todo.md")).toBe("task");
+    expect(taskFileKind("Bugs.md")).toBe("task");
+    expect(taskFileKind("ideas/IDEAS.md")).toBe("idea");
+    expect(taskFileKind("PLANS.md")).toBeNull();
+    expect(taskFileKind("notes/plan.md.bak")).toBeNull();
+    expect(taskFileKind(null)).toBeNull();
+  });
+
+  const plan = doc(
+    "# Plan",               // 0
+    "Intro.",               // 1
+    "## Decisions",         // 2
+    "- plain bullet",       // 3
+    "## Phase 1",           // 4
+    "- [x] done",           // 5
+    "- [ ] open",           // 6
+    "  - [ ] sub",          // 7
+  );
+
+  it("sorts an untagged heading's checkboxes in a task file", () => {
+    const block = sortableBlockAt(plan, 6, "docs/PLAN.md")!;
+    expect(block.headingLine).toBe(4);
+    expect(applyEdit(plan, sortBlock(plan, block)!).slice(4)).toEqual(["## Phase 1", "- [ ] open", "  - [ ] sub", "- [x] done"]);
+  });
+
+  it("needs a checkbox in the block, and a task file", () => {
+    expect(sortableBlockAt(plan, 3, "PLAN.md")).toBeNull();
+    expect(sortableBlockAt(plan, 6, "notes/Phase.md")).toBeNull();
+    expect(sortableBlockAt(plan, 6)).toBeNull();
+  });
+
+  it("still takes a tagged heading anywhere", () => {
+    const lines = doc("### T #todo", "- [x] a", "- [ ] b");
+    expect(sortableBlockAt(lines, 1, "notes/x.md")?.headingLine).toBe(0);
   });
 });

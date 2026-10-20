@@ -23,6 +23,7 @@ import {
   readsAsDone,
   taggedHeadingKind,
 } from "./tags";
+import { taskFileKind } from "./taskFiles";
 
 /** A replacement of lines `[from, to)` with `lines`. */
 export interface LineEdit {
@@ -34,6 +35,26 @@ export interface LineEdit {
 /** Tagged-heading block at or around `line`, or null. */
 export function taggedBlockAt(lines: string[], line: number): Block | null {
   return findBlock(lines, line, isTaggedHeading);
+}
+
+/** True when the block has a checkbox item under its heading. */
+export function hasCheckbox(lines: string[], block: Block): boolean {
+  for (let i = block.headingLine + 1; i < block.end; i++) {
+    if (boxState(lines[i]) !== null) return true;
+  }
+  return false;
+}
+
+/**
+ * Block to sort at or around `line`: a tagged heading's, or in a
+ * well-known task file (taskFiles.ts), any heading's whose block has a
+ * checkbox, since Space Command reads those boxes without tags.
+ */
+export function sortableBlockAt(lines: string[], line: number, path?: string | null): Block | null {
+  const tagged = taggedBlockAt(lines, line);
+  if (tagged || !taskFileKind(path)) return tagged;
+  const block = findBlock(lines, line);
+  return block && hasCheckbox(lines, block) ? block : null;
 }
 
 /** A child item of a tagged heading's section. */

@@ -50,7 +50,7 @@ A selection-wide toggle (focus, snooze) turns the tag on for every line unless a
 
 Built on it:
 
-- **Header sort** ([src/HeaderSortExtension.ts](src/HeaderSortExtension.ts), `blockOps.ts`): a button widget on tagged headings and the **Sort block at cursor** command. Order: open before done, then focus, P0–P4, no priority, snoozed. Stable, so a second press changes nothing. Sub-items move with their parent. Never automatic.
+- **Header sort** ([src/HeaderSortExtension.ts](src/HeaderSortExtension.ts), `blockOps.ts`): a button widget on tagged headings and the **Sort block at cursor** command. Order: open before done, then focus, P0–P4, no priority, snoozed. Stable, so a second press changes nothing. Sub-items move with their parent. Never automatic. In a well-known task file (`src/taskFiles.ts`, Space Command's `TaskFormat.builtIn`), any heading whose block has a checkbox sorts too, untagged.
 - **Heading progress**: a `done/total` widget beside the sort button, counting tasks only (not ideas, principles or snoozed tasks).
 - **Header checklist** ([src/HeaderChecklistExtension.ts](src/HeaderChecklistExtension.ts)): Enter at the end of a tagged task or idea heading inserts `- [ ] ` on the next line.
 - **Move TODO to another file** (`blockOps.ts`, `main.ts`): cuts the line and its sub-items, or a whole tagged heading block, and appends it to the chosen note. Nothing is left behind. A child moved out from under a tagged heading gains the heading's kind tag, so it's still an item.

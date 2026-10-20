@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => SpaceCommandPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian10 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 var import_path = require("path");
 
 // src/SlashCommandSuggest.ts
@@ -1590,10 +1590,44 @@ var TabLockManager = class {
 // src/HeaderSortExtension.ts
 var import_view = require("@codemirror/view");
 var import_state = require("@codemirror/state");
+var import_obsidian8 = require("obsidian");
+
+// src/taskFiles.ts
+var TASK_FILES = {
+  "plan.md": "task",
+  "bugs.md": "task",
+  "issues.md": "task",
+  "todo.md": "task",
+  "todos.md": "task",
+  "ideas.md": "idea",
+  "testing.md": "task",
+  "tests.md": "task"
+};
+function taskFileKind(path) {
+  var _a;
+  if (!path)
+    return null;
+  const name = path.split("/").pop().toLowerCase();
+  return (_a = TASK_FILES[name]) != null ? _a : null;
+}
 
 // src/blockOps.ts
 function taggedBlockAt(lines, line) {
   return findBlock(lines, line, isTaggedHeading);
+}
+function hasCheckbox(lines, block) {
+  for (let i = block.headingLine + 1; i < block.end; i++) {
+    if (boxState(lines[i]) !== null)
+      return true;
+  }
+  return false;
+}
+function sortableBlockAt(lines, line, path) {
+  const tagged = taggedBlockAt(lines, line);
+  if (tagged || !taskFileKind(path))
+    return tagged;
+  const block = findBlock(lines, line);
+  return block && hasCheckbox(lines, block) ? block : null;
 }
 function sectionChildren(lines, block) {
   var _a;
@@ -1754,8 +1788,12 @@ function docLines(doc) {
     lines.push(doc.line(i).text);
   return lines;
 }
-function sortChange(lines, line) {
-  const block = taggedBlockAt(lines, line);
+function viewPath(view) {
+  var _a, _b, _c;
+  return (_c = (_b = (_a = view.state.field(import_obsidian8.editorInfoField, false)) == null ? void 0 : _a.file) == null ? void 0 : _b.path) != null ? _c : null;
+}
+function sortChange(lines, line, path) {
+  const block = sortableBlockAt(lines, line, path);
   if (!block)
     return { notice: "Cursor isn't in a tagged heading's block." };
   const edit = sortBlock(lines, block);
@@ -1777,7 +1815,7 @@ var SortButtonWidget = class extends import_view.WidgetType {
       e.preventDefault();
       e.stopPropagation();
       const line = view.state.doc.lineAt(view.posAtDOM(btn)).number - 1;
-      const result = sortChange(docLines(view.state.doc), line);
+      const result = sortChange(docLines(view.state.doc), line, viewPath(view));
       if (result.change) {
         view.dispatch({ changes: result.change });
         showNotice2("Sorted items.");
@@ -1813,12 +1851,15 @@ var ProgressWidget = class extends import_view.WidgetType {
     return this.done === other.done && this.total === other.total;
   }
 };
-function isSortableHeading(lines, lineNumber) {
+function isSortableHeading(lines, lineNumber, inTaskFile) {
   const line = lines[lineNumber];
-  if (!/^#{1,6}\s/.test(line) || !hasAnyTag(line, TASK_TAGS))
+  if (!/^#{1,6}\s/.test(line))
+    return false;
+  const tagged = hasAnyTag(line, TASK_TAGS);
+  if (!tagged && !inTaskFile)
     return false;
   const block = blockAtHeading(lines, lineNumber);
-  if (!block)
+  if (!block || !tagged && !hasCheckbox(lines, block))
     return false;
   let children = 0;
   for (let i = block.headingLine + 1; i < block.end; i++) {
@@ -1841,11 +1882,12 @@ function createHeaderSortPlugin() {
       buildDecorations(view) {
         const builder = new import_state.RangeSetBuilder();
         let lines = null;
+        const inTaskFile = taskFileKind(viewPath(view)) === "task";
         for (const { from, to } of view.visibleRanges) {
           let pos = from;
           while (pos < to) {
             const line = view.state.doc.lineAt(pos);
-            if (/^#{1,6}\s.*#(?:todos?|ideas?|ideation|principles?)\b/i.test(line.text)) {
+            if (inTaskFile ? /^#{1,6}\s/.test(line.text) : /^#{1,6}\s.*#(?:todos?|ideas?|ideation|principles?)\b/i.test(line.text)) {
               lines != null ? lines : lines = docLines(view.state.doc);
               const progress = headingProgress(lines, line.number - 1);
               if (progress) {
@@ -1855,7 +1897,7 @@ function createHeaderSortPlugin() {
                   import_view.Decoration.widget({ widget: new ProgressWidget(progress.done, progress.total), side: 1 })
                 );
               }
-              if (isSortableHeading(lines, line.number - 1)) {
+              if (isSortableHeading(lines, line.number - 1, inTaskFile)) {
                 builder.add(
                   line.to,
                   line.to,
@@ -1874,9 +1916,10 @@ function createHeaderSortPlugin() {
     }
   );
 }
-function sortBlockAtCursor(editor) {
+function sortBlockAtCursor(editor, ctx) {
+  var _a, _b;
   const lines = editor.getValue().split("\n");
-  const result = sortChange(lines, editor.getCursor().line);
+  const result = sortChange(lines, editor.getCursor().line, (_b = (_a = ctx.file) == null ? void 0 : _a.path) != null ? _b : null);
   if (!result.change) {
     showNotice2(result.notice);
     return;
@@ -2174,7 +2217,7 @@ function registerTagCommands(plugin) {
 }
 
 // src/TagSuggest.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 var VOCABULARY = [
   { tag: "#todo", hint: "task" },
   { tag: "#todone", hint: "done" },
@@ -2193,7 +2236,7 @@ var VOCABULARY = [
   { tag: "#ideation", hint: "idea", alias: true },
   { tag: "#principles", hint: "principle", alias: true }
 ];
-var TagSuggest = class extends import_obsidian8.EditorSuggest {
+var TagSuggest = class extends import_obsidian9.EditorSuggest {
   constructor(app) {
     super(app);
     this.limit = 40;
@@ -2500,7 +2543,7 @@ var HugoTitleLinkResolver = class {
 // src/AppSwitch.ts
 var import_state4 = require("@codemirror/state");
 var import_view3 = require("@codemirror/view");
-var import_obsidian9 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 
 // src/landing.ts
 function nonBodyLines(lines) {
@@ -2621,7 +2664,7 @@ function flash(editor, line) {
 }
 function basePath(plugin) {
   const adapter = plugin.app.vault.adapter;
-  return adapter instanceof import_obsidian9.FileSystemAdapter ? adapter.getBasePath() : null;
+  return adapter instanceof import_obsidian10.FileSystemAdapter ? adapter.getBasePath() : null;
 }
 function openExternal(url) {
   try {
@@ -2667,7 +2710,7 @@ async function openAtLine(plugin, params) {
     await leaf.openFile(file);
   workspace.setActiveLeaf(leaf, { focus: true });
   const view = leaf.view;
-  if (!(view instanceof import_obsidian9.MarkdownView))
+  if (!(view instanceof import_obsidian10.MarkdownView))
     return;
   const lines = view.getViewData().split("\n");
   const line = landingLine(lines, {
@@ -2687,7 +2730,7 @@ async function openAtLine(plugin, params) {
 }
 function openActiveInSpaceCommand(plugin) {
   var _a;
-  const view = plugin.app.workspace.getActiveViewOfType(import_obsidian9.MarkdownView);
+  const view = plugin.app.workspace.getActiveViewOfType(import_obsidian10.MarkdownView);
   const file = (_a = view == null ? void 0 : view.file) != null ? _a : plugin.app.workspace.getActiveFile();
   if (!file || file.extension !== "md") {
     showNotice2("Open a note first.");
@@ -2704,7 +2747,7 @@ function registerAppSwitch(plugin, settings) {
       var _a;
       if (!settings().showOpenInSpaceCommand)
         return false;
-      const view = plugin.app.workspace.getActiveViewOfType(import_obsidian9.MarkdownView);
+      const view = plugin.app.workspace.getActiveViewOfType(import_obsidian10.MarkdownView);
       const file = (_a = view == null ? void 0 : view.file) != null ? _a : plugin.app.workspace.getActiveFile();
       if (!file || file.extension !== "md")
         return false;
@@ -2727,7 +2770,7 @@ function registerAppSwitch(plugin, settings) {
 }
 
 // main.ts
-var SpaceCommandPlugin = class extends import_obsidian10.Plugin {
+var SpaceCommandPlugin = class extends import_obsidian11.Plugin {
   constructor() {
     super(...arguments);
     this.spaceCommandRibbon = null;
@@ -2805,14 +2848,14 @@ var SpaceCommandPlugin = class extends import_obsidian10.Plugin {
     this.addCommand({
       id: "sort-block-at-cursor",
       name: "Sort block at cursor",
-      editorCallback: (editor) => sortBlockAtCursor(editor)
+      editorCallback: (editor, ctx) => sortBlockAtCursor(editor, ctx)
     });
     this.titleLinkResolver = new HugoTitleLinkResolver(this.app);
     this.registerEvent(this.app.metadataCache.on("changed", (file) => this.titleLinkResolver.onFileChanged(file)));
     this.registerEvent(this.app.vault.on("delete", (file) => this.titleLinkResolver.onFileDeleted(file.path)));
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        if (file instanceof import_obsidian10.TFile)
+        if (file instanceof import_obsidian11.TFile)
           this.titleLinkResolver.onFileRenamed(file, oldPath);
       })
     );
@@ -2903,7 +2946,7 @@ var SpaceCommandPlugin = class extends import_obsidian10.Plugin {
 function chooseVaultPath(vault, kind, title, currentValue) {
   var _a, _b;
   const adapter = vault.adapter;
-  if (!(adapter instanceof import_obsidian10.FileSystemAdapter))
+  if (!(adapter instanceof import_obsidian11.FileSystemAdapter))
     return null;
   const basePath2 = adapter.getBasePath();
   try {
@@ -2929,7 +2972,7 @@ function chooseVaultPath(vault, kind, title, currentValue) {
     return null;
   }
 }
-var SpaceCommandSettingTab = class extends import_obsidian10.PluginSettingTab {
+var SpaceCommandSettingTab = class extends import_obsidian11.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     // Sticky across display() re-renders: true once the user explicitly picks
@@ -2963,7 +3006,7 @@ var SpaceCommandSettingTab = class extends import_obsidian10.PluginSettingTab {
       (p) => p.format === this.plugin.settings.insertDateFormat
     );
     const showCustomInsertField = this.showCustomInsertDateFormat || !insertFormatIsPreset;
-    new import_obsidian10.Setting(containerEl).setName("Insert date format").setDesc(
+    new import_obsidian11.Setting(containerEl).setName("Insert date format").setDesc(
       `Format @today, @tomorrow, @yesterday, @date, /today, and /tomorrow insert into note text. Today: "${formatDate(/* @__PURE__ */ new Date(), this.plugin.settings.insertDateFormat)}"`
     ).addDropdown((dropdown) => {
       for (const preset of DATE_FORMAT_PRESETS) {
@@ -2984,14 +3027,14 @@ var SpaceCommandSettingTab = class extends import_obsidian10.PluginSettingTab {
       });
     });
     if (showCustomInsertField) {
-      new import_obsidian10.Setting(containerEl).setName("Custom insert date format").setDesc("moment.js format string, e.g. dddd, MMMM Do \u2192 Tuesday, July 10th").addText(
+      new import_obsidian11.Setting(containerEl).setName("Custom insert date format").setDesc("moment.js format string, e.g. dddd, MMMM Do \u2192 Tuesday, July 10th").addText(
         (text) => text.setPlaceholder("dddd, MMMM Do").setValue(this.plugin.settings.insertDateFormat).onChange(async (value) => {
           this.plugin.settings.insertDateFormat = value;
           await this.plugin.saveSettings();
         })
       );
     }
-    new import_obsidian10.Setting(containerEl).setName("Show tab lock buttons").setDesc("Add lock buttons to tab headers. Locked tabs force links to open in new tabs.").addToggle(
+    new import_obsidian11.Setting(containerEl).setName("Show tab lock buttons").setDesc("Add lock buttons to tab headers. Locked tabs force links to open in new tabs.").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.showTabLockButton).onChange(async (value) => {
         this.plugin.settings.showTabLockButton = value;
         if (value) {
@@ -3002,7 +3045,7 @@ var SpaceCommandSettingTab = class extends import_obsidian10.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian10.Setting(containerEl).setName("Resolve wiki links by page title").setDesc("When the vault is a Hugo site, a [[Page Title]] link that matches no filename resolves to the page whose frontmatter title matches, ignoring case and punctuation (the same rule a Hugo wiki-link render hook uses). Covers clicking, hover preview, link styling, backlinks, and the graph. Files are never changed.").addToggle(
+    new import_obsidian11.Setting(containerEl).setName("Resolve wiki links by page title").setDesc("When the vault is a Hugo site, a [[Page Title]] link that matches no filename resolves to the page whose frontmatter title matches, ignoring case and punctuation (the same rule a Hugo wiki-link render hook uses). Covers clicking, hover preview, link styling, backlinks, and the graph. Files are never changed.").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.resolveTitleLinks).onChange(async (value) => {
         this.plugin.settings.resolveTitleLinks = value;
         await this.plugin.saveSettings();
@@ -3010,7 +3053,7 @@ var SpaceCommandSettingTab = class extends import_obsidian10.PluginSettingTab {
       })
     );
     containerEl.createEl("h3", { text: "Space Command" });
-    new import_obsidian10.Setting(containerEl).setName("Show Open in Space Command").setDesc("A command and editor menu item that opens the note, at the cursor's line, in Space Command. Turn it off if Space Command isn't installed.").addToggle(
+    new import_obsidian11.Setting(containerEl).setName("Show Open in Space Command").setDesc("A command and editor menu item that opens the note, at the cursor's line, in Space Command. Turn it off if Space Command isn't installed.").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.showOpenInSpaceCommand).onChange(async (value) => {
         this.plugin.settings.showOpenInSpaceCommand = value;
         await this.plugin.saveSettings();
@@ -3019,7 +3062,7 @@ var SpaceCommandSettingTab = class extends import_obsidian10.PluginSettingTab {
       })
     );
     if (this.plugin.settings.showOpenInSpaceCommand) {
-      new import_obsidian10.Setting(containerEl).setName("Ribbon icon").setDesc("Also show Open in Space Command in the ribbon.").addToggle(
+      new import_obsidian11.Setting(containerEl).setName("Ribbon icon").setDesc("Also show Open in Space Command in the ribbon.").addToggle(
         (toggle) => toggle.setValue(this.plugin.settings.showSpaceCommandRibbon).onChange(async (value) => {
           this.plugin.settings.showSpaceCommandRibbon = value;
           await this.plugin.saveSettings();
@@ -3028,7 +3071,7 @@ var SpaceCommandSettingTab = class extends import_obsidian10.PluginSettingTab {
       );
     }
     containerEl.createEl("h3", { text: "Team" });
-    new import_obsidian10.Setting(containerEl).setName("Team file path").setDesc(`Your @handle list, in a vault note. It's written only when you choose "Add @handle to team" or run Update team note.`).addText(
+    new import_obsidian11.Setting(containerEl).setName("Team file path").setDesc(`Your @handle list, in a vault note. It's written only when you choose "Add @handle to team" or run Update team note.`).addText(
       (text) => text.setPlaceholder("team.md").setValue(this.plugin.settings.teamFilePath).onChange(async (value) => {
         this.plugin.settings.teamFilePath = value;
         this.plugin.teamManager.setFilePath(value);
@@ -3047,8 +3090,8 @@ var SpaceCommandSettingTab = class extends import_obsidian10.PluginSettingTab {
       })
     );
     const teamFile = this.app.vault.getAbstractFileByPath(this.plugin.settings.teamFilePath);
-    const teamButtonSetting = new import_obsidian10.Setting(containerEl);
-    if (teamFile instanceof import_obsidian10.TFile) {
+    const teamButtonSetting = new import_obsidian11.Setting(containerEl);
+    if (teamFile instanceof import_obsidian11.TFile) {
       teamButtonSetting.setName("Manage team file").addButton(
         (btn) => btn.setButtonText("Open team file").onClick(async () => {
           await this.app.workspace.getLeaf(false).openFile(teamFile);
@@ -3076,8 +3119,8 @@ var SpaceCommandSettingTab = class extends import_obsidian10.PluginSettingTab {
       }
     }
     containerEl.createEl("h3", { text: "Help" });
-    const helpExists = this.app.vault.getAbstractFileByPath(HELP_NOTE_PATH) instanceof import_obsidian10.TFile;
-    new import_obsidian10.Setting(containerEl).setName("Help note").setDesc(`A note of live #todo/#idea examples you can try, at "${HELP_NOTE_PATH}". Created only when you ask.`).addButton(
+    const helpExists = this.app.vault.getAbstractFileByPath(HELP_NOTE_PATH) instanceof import_obsidian11.TFile;
+    new import_obsidian11.Setting(containerEl).setName("Help note").setDesc(`A note of live #todo/#idea examples you can try, at "${HELP_NOTE_PATH}". Created only when you ask.`).addButton(
       (btn) => btn.setButtonText(helpExists ? "Open help note" : "Create help note").onClick(async () => {
         await this.plugin.helpNoteManager.open();
         this.display();

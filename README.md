@@ -143,7 +143,7 @@ New tags always go at the end of the line, and existing ones are renamed where t
 A tagged heading and the lines under it make a block:
 
 - **Progress.** In Live Preview, the heading shows how many of its tasks are done, like `2/5`. Ideas and snoozed tasks don't count.
-- **Sort.** The sort button beside the heading, or **Sort block at cursor**, orders the items: open before done, then focus, P0–P4, no priority, snoozed. Sub-items stay with their parents. It only runs when you ask.
+- **Sort.** The sort button beside the heading, or **Sort block at cursor**, orders the items: open before done, then focus, P0–P4, no priority, snoozed. Sub-items stay with their parents. It only runs when you ask. In `PLAN.md`, `TODO.md`, `BUGS.md`, `TESTING.md` and the other files Space Command reads without tags, any heading with checkboxes under it sorts the same way.
 - **Complete all under heading** completes the open tasks in the block, and leaves ideas and principles alone.
 - **Move TODO to another file** cuts the line at the cursor, with its sub-items, or a whole tagged heading block, and appends it to a note you pick. Nothing is left behind. A task moved out from under a tagged heading gains `#todo`, so it's still a task.
 

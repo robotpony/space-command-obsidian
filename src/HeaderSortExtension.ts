@@ -7,10 +7,11 @@ import {
   EditorView,
 } from "@codemirror/view";
 import { RangeSetBuilder, Text } from "@codemirror/state";
-import { Editor } from "obsidian";
+import { Editor, editorInfoField, MarkdownFileInfo } from "obsidian";
 import { blockAtHeading } from "./blocks";
-import { headingProgress, sortBlock, taggedBlockAt, toCharChange } from "./blockOps";
+import { hasCheckbox, headingProgress, sortableBlockAt, sortBlock, toCharChange } from "./blockOps";
 import { hasAnyTag, TASK_TAGS } from "./tags";
+import { taskFileKind } from "./taskFiles";
 import { showNotice } from "./utils";
 
 // SVG icon for sort button
@@ -22,9 +23,14 @@ function docLines(doc: Text): string[] {
   return lines;
 }
 
-/** Sorts the tagged block at `line` in `lines`; returns the change to apply, or a notice when there's nothing to do. */
-function sortChange(lines: string[], line: number) {
-  const block = taggedBlockAt(lines, line);
+/** Path of the note an editor view shows, if any. */
+function viewPath(view: EditorView): string | null {
+  return view.state.field(editorInfoField, false)?.file?.path ?? null;
+}
+
+/** Sorts the block at `line` in `lines` (sortableBlockAt); returns the change to apply, or a notice when there's nothing to do. */
+function sortChange(lines: string[], line: number, path: string | null) {
+  const block = sortableBlockAt(lines, line, path);
   if (!block) return { notice: "Cursor isn't in a tagged heading's block." };
   const edit = sortBlock(lines, block);
   if (!edit) return { notice: "Items already sorted." };
@@ -53,7 +59,7 @@ class SortButtonWidget extends WidgetType {
       // Re-read the heading's line from the button's position, in case the
       // document moved since the widget was drawn.
       const line = view.state.doc.lineAt(view.posAtDOM(btn)).number - 1;
-      const result = sortChange(docLines(view.state.doc), line);
+      const result = sortChange(docLines(view.state.doc), line, viewPath(view));
       if (result.change) {
         view.dispatch({ changes: result.change });
         showNotice("Sorted items.");
@@ -97,12 +103,18 @@ class ProgressWidget extends WidgetType {
   }
 }
 
-/** A `#todo`/`#todos` heading whose block has at least two child lines. */
-function isSortableHeading(lines: string[], lineNumber: number): boolean {
+/**
+ * A heading whose block has at least two child lines: a `#todo`/`#todos`
+ * heading, or in a well-known task file (PLAN.md, TODO.md, …) any heading
+ * with a checkbox under it.
+ */
+function isSortableHeading(lines: string[], lineNumber: number, inTaskFile: boolean): boolean {
   const line = lines[lineNumber];
-  if (!/^#{1,6}\s/.test(line) || !hasAnyTag(line, TASK_TAGS)) return false;
+  if (!/^#{1,6}\s/.test(line)) return false;
+  const tagged = hasAnyTag(line, TASK_TAGS);
+  if (!tagged && !inTaskFile) return false;
   const block = blockAtHeading(lines, lineNumber);
-  if (!block) return false;
+  if (!block || (!tagged && !hasCheckbox(lines, block))) return false;
   let children = 0;
   for (let i = block.headingLine + 1; i < block.end; i++) {
     if (lines[i].trim() !== "" && ++children >= 2) return true;
@@ -131,6 +143,7 @@ export function createHeaderSortPlugin() {
       buildDecorations(view: EditorView): DecorationSet {
         const builder = new RangeSetBuilder<Decoration>();
         let lines: string[] | null = null;
+        const inTaskFile = taskFileKind(viewPath(view)) === "task";
 
         // Iterate through visible lines
         for (const { from, to } of view.visibleRanges) {
@@ -138,7 +151,7 @@ export function createHeaderSortPlugin() {
           while (pos < to) {
             const line = view.state.doc.lineAt(pos);
             // Cheap pre-check before splitting the document.
-            if (/^#{1,6}\s.*#(?:todos?|ideas?|ideation|principles?)\b/i.test(line.text)) {
+            if (inTaskFile ? /^#{1,6}\s/.test(line.text) : /^#{1,6}\s.*#(?:todos?|ideas?|ideation|principles?)\b/i.test(line.text)) {
               lines ??= docLines(view.state.doc);
               const progress = headingProgress(lines, line.number - 1);
               if (progress) {
@@ -148,7 +161,7 @@ export function createHeaderSortPlugin() {
                   Decoration.widget({ widget: new ProgressWidget(progress.done, progress.total), side: 1 })
                 );
               }
-              if (isSortableHeading(lines, line.number - 1)) {
+              if (isSortableHeading(lines, line.number - 1, inTaskFile)) {
                 builder.add(
                   line.to,
                   line.to,
@@ -169,10 +182,10 @@ export function createHeaderSortPlugin() {
   );
 }
 
-/** "Sort block at cursor" command: sorts the tagged block containing the cursor, as one undoable edit. */
-export function sortBlockAtCursor(editor: Editor): void {
+/** "Sort block at cursor" command: sorts the block containing the cursor (sortableBlockAt), as one undoable edit. */
+export function sortBlockAtCursor(editor: Editor, ctx: MarkdownFileInfo): void {
   const lines = editor.getValue().split("\n");
-  const result = sortChange(lines, editor.getCursor().line);
+  const result = sortChange(lines, editor.getCursor().line, ctx.file?.path ?? null);
   if (!result.change) {
     showNotice(result.notice!);
     return;

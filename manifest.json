@@ -1,7 +1,7 @@
 {
   "id": "space-command",
   "name": "␣⌘ Space Command for Obsidian",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minAppVersion": "1.14.0",
   "description": "Write tasks in your vault for Space Command: tags, dates, handles, checklists and blocks, and switching between the two apps.",
   "author": "Bruce Alderson",

@@ -68,6 +68,7 @@ A bug goes in `BUGS.md`. A question about Space Command's rules goes to the comm
     2. Press the header sort button: open before done, then focus, P0–P4, unprioritized, snoozed. Sub-items stay under their parents.
     3. Press it again: the order shouldn't flip.
     4. Run **Sort block at cursor**: same result.
+    5. In a `PLAN.md` or `TODO.md` (1.1.0), an untagged `## Phase` heading with mixed boxes shows the sort button and sorts the same way. A heading with only plain bullets shows none, and neither does the same heading in a note with another name.
     Result:
 - [ ] W12. Move TODO to another file (0.57.0).
     1. On a task with sub-items, run **Move TODO to another file** and pick a note: the line and its sub-items move, and nothing is left behind.

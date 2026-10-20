@@ -2,6 +2,18 @@
 
 All notable changes to ␣⌘ Space Command for Obsidian. History from before 1.0.0, when the plugin was Warped Command, is in [CHANGELOG-ARCHIVE.md](CHANGELOG-ARCHIVE.md).
 
+## [1.1.0] - Unreleased
+
+### Added
+
+- Header sort in Space Command's well-known task files: `PLAN.md`,
+  `TODO.md`, `TODOS.md`, `BUGS.md`, `ISSUES.md`, `TESTING.md` and
+  `TESTS.md`, by name in any folder, ignoring case. Any heading with a
+  checkbox under it gets the sort button, and **Sort block at cursor**
+  works there too, since Space Command reads those boxes without tags
+  (`TaskFormat.swift`). `IDEAS.md` sorts at the cursor only, as an
+  `#idea` heading does.
+
 ## [1.0.0] - Unreleased
 
 Built on the `space-command` branch; see PLAN.md. Filled in phase by phase.

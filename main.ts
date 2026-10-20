@@ -136,7 +136,7 @@ export default class SpaceCommandPlugin extends Plugin {
     this.addCommand({
       id: "sort-block-at-cursor",
       name: "Sort block at cursor",
-      editorCallback: (editor) => sortBlockAtCursor(editor),
+      editorCallback: (editor, ctx) => sortBlockAtCursor(editor, ctx),
     });
 
     // Title-based wiki links for a Hugo vault — see HugoTitleLinks.ts.
