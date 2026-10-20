@@ -92,6 +92,10 @@ Phase 2 is 0.57.0, Phase 3 is 0.57.1, Phase 4 is 0.58.0, Phase 5 is 0.59.0, Phas
 
 ### Added
 
+- `npm run package` (`scripts/package.sh`): builds, tests and writes the
+  release zip, `dist/space-command-obsidian-<version>.zip`, with a
+  `space-command/` folder to drop into a vault's plugins folder, and its
+  SHA-256.
 - **Sort block at cursor** command, beside the header sort button.
 - **Update team note** command: appends the `@handle`s used on the
   vault's task lines that the team note doesn't list yet.

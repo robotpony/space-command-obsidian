@@ -7,7 +7,8 @@
     "dev": "node esbuild.config.mjs",
     "prebuild": "node scripts/check-version-bump.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-    "test": "vitest run"
+    "test": "vitest run",
+    "package": "scripts/package.sh"
   },
   "keywords": [],
   "author": "Bruce Alderson",

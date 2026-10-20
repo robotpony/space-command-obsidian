@@ -9,6 +9,7 @@ npm install          # install dependencies
 npm run dev          # watch mode (rebuilds on file changes)
 npm run build        # production build (tsc -noEmit + esbuild)
 npm test             # run vitest test suite
+npm run package      # build, test, and zip a release into dist/ (scripts/package.sh)
 ```
 
 Build output is `main.js` at the repo root. To test in Obsidian, copy `main.js`, `manifest.json`, and `styles.css` to `<vault>/.obsidian/plugins/space-command/` (the plugin's `id`; it was `warped-todo` before 1.0.0). `./install.sh` automates this, and also removes a leftover `warped-todo` folder and swaps its id in `community-plugins.json`:
@@ -20,6 +21,8 @@ Build output is `main.js` at the repo root. To test in Obsidian, copy `main.js`,
 ```
 
 Vault selections are cached in `.install-vaults` for reuse with `--previous`.
+
+`npm run package` (or `scripts/package.sh`) makes the release zip that space-command.ca serves: `dist/space-command-obsidian-<version>.zip`, holding a `space-command/` folder with the three files, plus a `.sha256`. It refuses when `manifest.json` and `package.json` versions differ or plugin source has uncommitted changes (`--allow-dirty` overrides), and prints the zip's path as its last line. `-o DIR` writes somewhere else. The Space Command commander uses it to publish.
 
 ## Architecture
 

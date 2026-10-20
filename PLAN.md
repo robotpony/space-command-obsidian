@@ -183,6 +183,7 @@ You said docs come after the code. This phase is where the rebrand lands in one 
 - [x] Help note rewritten to point at Space Command (`Space Command Help.md`); created only through Settings › Help, on demand (the rule since 0.59.2; W15 tests it).
 - [x] Notice/branding in `src/shared/ui`: keep `␣⌘`, rename CSS prefixes as part of the styles purge (`warped-todo-` → `space-command-`).
 - [ ] Release zip (`main.js`, `manifest.json`, `styles.css`) with one-step-per-line install instructions; a page and link on space-command.ca (Space Command side).
+  - [x] `npm run package` makes the zip (`dist/space-command-obsidian-<version>.zip` + `.sha256`, path on the last line of output), and the README has the install steps (2026-10-20). Left for the commander: run it and publish the page and link.
 - [ ] (Bruce) Run the hand tests in `TESTING.md` (W1–W15) and Space Command's T15 before the merge.
 - [ ] Merge `space-command` into `main`; push only when Bruce asks.
 - [x] (Bruce, after testing) Move or merge this GitHub repo. Renamed to `robotpony/space-command-obsidian` on 2026-10-20. Leaning towards merging it into the space-command repo rather than renaming it in place; decided once 1.0.0 is tested.
